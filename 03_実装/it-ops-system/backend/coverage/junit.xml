@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="jest tests" tests="4" failures="0" errors="0" time="1.201">
+  <testsuite name="Simple Test Suite" errors="0" failures="0" skipped="0" timestamp="2025-02-16T08:53:40" time="1.034" tests="4">
+    <testcase classname="Simple Test Suite should pass a basic test" name="Simple Test Suite should pass a basic test" time="0.004">
+    </testcase>
+    <testcase classname="Simple Test Suite should handle async operations" name="Simple Test Suite should handle async operations" time="0">
+    </testcase>
+    <testcase classname="Simple Test Suite should handle arrays" name="Simple Test Suite should handle arrays" time="0.001">
+    </testcase>
+    <testcase classname="Simple Test Suite should handle objects" name="Simple Test Suite should handle objects" time="0.002">
+    </testcase>
+  </testsuite>
+</testsuites>
