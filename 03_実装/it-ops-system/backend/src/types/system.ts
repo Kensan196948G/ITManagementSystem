@@ -1,100 +1,150 @@
-import { ADUser, ADGroup, M365License, M365User, M365Service, SystemError } from './custom';
-
-// AD関連のDTO型定義
-export interface ADUserCreateDto {
-  samAccountName: string;
+// Active Directory関連の型
+export interface ADUser {
+  sAMAccountName: string;
   displayName: string;
-  email: string;
+  mail: string;
   department?: string;
   title?: string;
-  password: string;
-  enabled: boolean;
-  groups: string[];
+  manager?: string;
+  whenCreated?: Date;
+  whenChanged?: Date;
+  lastLogon?: Date;
+  memberOf?: string[];
+}
+
+export interface ADGroup {
+  cn: string;
+  description?: string;
+  groupType: string;
+  member?: string[];
+}
+
+// Microsoft 365関連の型
+export interface M365User {
+  id: string;
+  displayName: string;
+  email: string;
+  accountEnabled: boolean;
+  licenses: string[];
+  assignedServices: string[];
+  lastSignIn?: Date;
+}
+
+export interface M365License {
+  id: string;
+  name: string;
+  totalQuantity: number;
+  consumedQuantity: number;
+  skuId: string;
+  services: string[];
+}
+
+// システム監視関連の型
+export interface SystemMetrics {
+  timestamp: Date;
+  cpu: {
+    usage: number;
+    temperature: number;
+    cores: Array<{
+      id: number;
+      usage: number;
+    }>;
+  };
+  memory: {
+    total: number;
+    used: number;
+    free: number;
+  };
+  disk: {
+    total: number;
+    used: number;
+    free: number;
+  };
+  network: {
+    bytesIn: number;
+    bytesOut: number;
+    connections: number;
+  };
+}
+
+export interface Alert {
+  id: string;
+  type: 'info' | 'warning' | 'error' | 'critical';
+  message: string;
+  source: string;
+  timestamp: Date;
+  acknowledged: boolean;
+  acknowledgedBy?: string;
+  acknowledgedAt?: Date;
+}
+
+export interface LogEntry {
+  id: string;
+  timestamp: Date;
+  level: 'debug' | 'info' | 'warning' | 'error';
+  source: string;
+  message: string;
+  metadata: Record<string, any>;
+}
+
+export interface SystemError extends Error {
+  code?: string;
+  details?: any;
+}
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  roles: string[];
+}
+
+// DTOインターフェース
+export interface ADUserCreateDto {
+  sAMAccountName: string;
+  displayName: string;
+  mail: string;
+  department?: string;
+  title?: string;
 }
 
 export interface ADUserUpdateDto {
   displayName?: string;
-  email?: string;
   department?: string;
   title?: string;
-  enabled?: boolean;
-  groups?: string[];
 }
 
 export interface ADGroupCreateDto {
-  name: string;
+  cn: string;
   description?: string;
-  type: 'security' | 'distribution';
-  scope: 'domainLocal' | 'global' | 'universal';
-  members: string[];
 }
 
 export interface ADGroupUpdateDto {
   description?: string;
-  type?: 'security' | 'distribution';
-  scope?: 'domainLocal' | 'global' | 'universal';
-  members?: string[];
 }
 
-// M365関連のDTO型定義
 export interface M365UserCreateDto {
   displayName: string;
   email: string;
   password: string;
-  licenses: string[];
   accountEnabled: boolean;
+  licenses: string[];
 }
 
 export interface M365UserUpdateDto {
   displayName?: string;
-  licenses?: string[];
   accountEnabled?: boolean;
+  licenses?: string[];
 }
 
 export interface M365LicenseCreateDto {
-  name: string;
   skuId: string;
-  totalQuantity: number;
-  services: {
-    id: string;
-    name: string;
-    status: 'enabled' | 'disabled';
-  }[];
+  quantity: number;
 }
 
 export interface M365LicenseUpdateDto {
-  name?: string;
-  totalQuantity?: number;
-  services?: {
-    id: string;
-    status: 'enabled' | 'disabled';
-  }[];
+  quantity: number;
 }
 
-// 操作結果型定義
-export interface ADOperationResult {
-  success: boolean;
-  message: string;
-  data?: any;
-}
-
-export interface M365OperationResult {
-  success: boolean;
-  message: string;
-  data?: any;
-}
-
-// サービス設定型定義
 export interface ServiceToggleDto {
   enabled: boolean;
 }
-
-// 再エクスポート
-export {
-  ADUser,
-  ADGroup,
-  M365License,
-  M365User,
-  M365Service,
-  SystemError
-};

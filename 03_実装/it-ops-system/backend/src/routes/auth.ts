@@ -3,6 +3,7 @@ import { compare } from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import ActiveDirectory from 'activedirectory2';
 import { config } from 'dotenv';
+import { AuthUser } from '../types/system';
 
 // 環境変数の読み込み
 config();
@@ -32,6 +33,15 @@ const generateToken = (user: any): string => {
   );
 };
 
+// カスタムリクエスト型の拡張
+declare global {
+  namespace Express {
+    interface Request {
+      user?: AuthUser;
+    }
+  }
+}
+
 // AD認証とJWTトークン生成
 router.post('/login', async (req, res) => {
   try {
@@ -45,60 +55,67 @@ router.post('/login', async (req, res) => {
     }
 
     // AD認証
-    ad.authenticate(username, password, async (err, auth) => {
-      if (err) {
-        console.error('AD Authentication error:', err);
-        return res.status(401).json({
-          status: 'error',
-          message: 'Authentication failed'
-        });
-      }
-
-      if (!auth) {
-        return res.status(401).json({
-          status: 'error',
-          message: 'Invalid credentials'
-        });
-      }
-
-      // ユーザー情報の取得
-      ad.findUser(username, (err, user) => {
+    return new Promise<void>((resolve) => {
+      ad.authenticate(username, password, async (err, auth) => {
         if (err) {
-          console.error('Error finding user:', err);
-          return res.status(500).json({
+          console.error('AD Authentication error:', err);
+          res.status(401).json({
             status: 'error',
-            message: 'Error retrieving user information'
+            message: 'Authentication failed'
           });
+          return resolve();
         }
 
-        if (!user) {
-          return res.status(404).json({
+        if (!auth) {
+          res.status(401).json({
             status: 'error',
-            message: 'User not found'
+            message: 'Invalid credentials'
           });
+          return resolve();
         }
 
-        // JWTトークンの生成
-        const token = generateToken(user);
-
-        // レスポンス
-        res.json({
-          status: 'success',
-          data: {
-            token,
-            user: {
-              username: user.sAMAccountName,
-              displayName: user.displayName,
-              email: user.mail,
-              groups: user.memberOf
-            }
+        // ユーザー情報の取得
+        ad.findUser(username, (findErr, user) => {
+          if (findErr) {
+            console.error('Error finding user:', findErr);
+            res.status(500).json({
+              status: 'error',
+              message: 'Error retrieving user information'
+            });
+            return resolve();
           }
+
+          if (!user) {
+            res.status(404).json({
+              status: 'error',
+              message: 'User not found'
+            });
+            return resolve();
+          }
+
+          // JWTトークンの生成
+          const token = generateToken(user);
+
+          // レスポンス
+          res.json({
+            status: 'success',
+            data: {
+              token,
+              user: {
+                username: user.sAMAccountName,
+                displayName: user.displayName,
+                email: user.mail,
+                groups: user.memberOf
+              }
+            }
+          });
+          resolve();
         });
       });
     });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       status: 'error',
       message: 'Internal server error'
     });
@@ -106,25 +123,27 @@ router.post('/login', async (req, res) => {
 });
 
 // トークン検証ミドルウェア
-export const verifyToken = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+export const verifyToken = (req: express.Request, res: express.Response, next: express.NextFunction): void => {
   const token = req.headers.authorization?.split(' ')[1];
 
   if (!token) {
-    return res.status(401).json({
+    res.status(401).json({
       status: 'error',
       message: 'No token provided'
     });
+    return;
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as AuthUser;
     req.user = decoded;
     next();
   } catch (error) {
-    return res.status(401).json({
+    res.status(401).json({
       status: 'error',
       message: 'Invalid token'
     });
+    return;
   }
 };
 

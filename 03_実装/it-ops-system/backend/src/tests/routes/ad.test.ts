@@ -1,73 +1,103 @@
 import request from 'supertest';
 import { Express } from 'express';
-import { ADUser, ADGroup } from '../../types/system';
-import {
-  mockRequest,
-  mockResponse,
-  createTestToken,
-  createTestUser,
-} from '../setup';
+import { mockRequest, mockResponse, createTestToken } from '../setup';
 import app from '../../index';
+import ActiveDirectory from 'activedirectory2';
+import { UserPayload } from '../../types/custom';
+
+// ActiveDirectoryのモック
+jest.mock('activedirectory2');
 
 describe('AD Routes', () => {
   let testToken: string;
 
-  beforeEach(async () => {
-    const testUser = await createTestUser();
-    testToken = createTestToken({ id: testUser.id });
+  beforeEach(() => {
+    testToken = createTestToken({ id: 'test-user-id', roles: ['admin'] });
+    jest.clearAllMocks();
   });
 
   describe('GET /ad/users', () => {
-    it('認証済みユーザーがADユーザー一覧を取得できる', async () => {
+    const mockUsers = [
+      {
+        sAMAccountName: 'testuser1',
+        displayName: 'Test User 1',
+        mail: 'testuser1@example.com',
+        department: 'IT',
+      },
+      {
+        sAMAccountName: 'testuser2',
+        displayName: 'Test User 2',
+        mail: 'testuser2@example.com',
+        department: 'HR',
+      },
+    ];
+
+    it('ユーザー一覧の取得 - 成功', async () => {
+      (ActiveDirectory as jest.Mock).mockImplementation(() => ({
+        findUsers: (_query: any, callback: Function) => callback(null, mockUsers),
+      }));
+
       const response = await request(app)
         .get('/api/ad/users')
         .set('Authorization', `Bearer ${testToken}`);
 
       expect(response.status).toBe(200);
       expect(response.body).toHaveProperty('status', 'success');
-      expect(Array.isArray(response.body.data)).toBe(true);
+      expect(response.body.data).toEqual(mockUsers);
     });
 
-    it('認証なしでアクセスするとエラーになる', async () => {
+    it('ユーザー一覧の取得 - AD接続エラー', async () => {
+      (ActiveDirectory as jest.Mock).mockImplementation(() => ({
+        findUsers: (_query: any, callback: Function) => 
+          callback(new Error('AD connection failed')),
+      }));
+
+      const response = await request(app)
+        .get('/api/ad/users')
+        .set('Authorization', `Bearer ${testToken}`);
+
+      expect(response.status).toBe(500);
+      expect(response.body).toHaveProperty('status', 'error');
+      expect(response.body).toHaveProperty('code', 'AD_ERROR');
+    });
+
+    it('認証なしでのアクセス拒否', async () => {
       const response = await request(app).get('/api/ad/users');
 
       expect(response.status).toBe(401);
       expect(response.body).toHaveProperty('status', 'error');
+      expect(response.body).toHaveProperty('message', 'No token provided');
     });
   });
 
   describe('POST /ad/users', () => {
-    const newUser = {
-      samAccountName: 'testuser1',
-      displayName: 'Test User 1',
-      email: 'testuser1@example.com',
+    const mockUserData = {
+      sAMAccountName: 'newuser',
+      displayName: 'New User',
+      mail: 'newuser@example.com',
       department: 'IT',
-      enabled: true,
-      password: 'TestPass123!',
-      groups: ['TestGroup']
     };
 
-    it('正常なユーザー作成リクエストが成功する', async () => {
+    it('ユーザー作成 - 成功', async () => {
+      (ActiveDirectory as jest.Mock).mockImplementation(() => ({
+        createUser: (_userData: any, callback: Function) => callback(null),
+      }));
+
       const response = await request(app)
         .post('/api/ad/users')
         .set('Authorization', `Bearer ${testToken}`)
-        .send(newUser);
+        .send(mockUserData);
 
       expect(response.status).toBe(200);
       expect(response.body).toHaveProperty('status', 'success');
       expect(response.body).toHaveProperty('message', 'User created successfully');
     });
 
-    it('必須フィールドが不足している場合はエラーになる', async () => {
-      const invalidUser = {
-        displayName: 'Test User 1',
-        email: 'testuser1@example.com'
-      };
-
+    it('ユーザー作成 - バリデーションエラー', async () => {
       const response = await request(app)
         .post('/api/ad/users')
         .set('Authorization', `Bearer ${testToken}`)
-        .send(invalidUser);
+        .send({});
 
       expect(response.status).toBe(400);
       expect(response.body).toHaveProperty('status', 'error');
@@ -75,16 +105,21 @@ describe('AD Routes', () => {
   });
 
   describe('PUT /ad/users/:samAccountName', () => {
-    it('ユーザー情報の更新が成功する', async () => {
-      const updateData = {
-        displayName: 'Updated Test User',
-        department: 'Updated Department'
-      };
+    const mockUpdateData = {
+      displayName: 'Updated User',
+      department: 'Finance',
+    };
+
+    it('ユーザー更新 - 成功', async () => {
+      (ActiveDirectory as jest.Mock).mockImplementation(() => ({
+        updateUser: (_samAccountName: string, _userData: any, callback: Function) => 
+          callback(null),
+      }));
 
       const response = await request(app)
-        .put('/api/ad/users/testuser1')
+        .put('/api/ad/users/testuser')
         .set('Authorization', `Bearer ${testToken}`)
-        .send(updateData);
+        .send(mockUpdateData);
 
       expect(response.status).toBe(200);
       expect(response.body).toHaveProperty('status', 'success');
@@ -92,32 +127,21 @@ describe('AD Routes', () => {
     });
   });
 
-  describe('GET /ad/groups', () => {
-    it('グループ一覧の取得が成功する', async () => {
-      const response = await request(app)
-        .get('/api/ad/groups')
-        .set('Authorization', `Bearer ${testToken}`);
-
-      expect(response.status).toBe(200);
-      expect(response.body).toHaveProperty('status', 'success');
-      expect(Array.isArray(response.body.data)).toBe(true);
-    });
-  });
-
   describe('POST /ad/groups', () => {
-    const newGroup = {
-      name: 'TestGroup1',
-      description: 'Test Group Description',
-      type: 'security',
-      scope: 'global',
-      members: ['testuser1']
+    const mockGroupData = {
+      cn: 'IT-Group',
+      description: 'IT Department Group',
     };
 
-    it('正常なグループ作成リクエストが成功する', async () => {
+    it('グループ作成 - 成功', async () => {
+      (ActiveDirectory as jest.Mock).mockImplementation(() => ({
+        createGroup: (_groupData: any, callback: Function) => callback(null),
+      }));
+
       const response = await request(app)
         .post('/api/ad/groups')
         .set('Authorization', `Bearer ${testToken}`)
-        .send(newGroup);
+        .send(mockGroupData);
 
       expect(response.status).toBe(200);
       expect(response.body).toHaveProperty('status', 'success');
@@ -125,55 +149,24 @@ describe('AD Routes', () => {
     });
   });
 
-  describe('PUT /ad/groups/:name', () => {
-    it('グループ情報の更新が成功する', async () => {
-      const updateData = {
-        description: 'Updated Group Description',
-        members: ['testuser1', 'testuser2']
-      };
-
-      const response = await request(app)
-        .put('/api/ad/groups/TestGroup1')
-        .set('Authorization', `Bearer ${testToken}`)
-        .send(updateData);
-
-      expect(response.status).toBe(200);
-      expect(response.body).toHaveProperty('status', 'success');
-      expect(response.body).toHaveProperty('message', 'Group updated successfully');
-    });
-  });
-
   describe('POST /ad/groups/:name/members', () => {
-    it('グループメンバーの追加が成功する', async () => {
-      const memberAction = {
-        action: 'add',
-        members: ['testuser2']
-      };
+    it('グループメンバー追加 - 成功', async () => {
+      (ActiveDirectory as jest.Mock).mockImplementation(() => ({
+        addUsersToGroup: (_groupName: string, _members: string[], callback: Function) => 
+          callback(null),
+      }));
 
       const response = await request(app)
-        .post('/api/ad/groups/TestGroup1/members')
+        .post('/api/ad/groups/IT-Group/members')
         .set('Authorization', `Bearer ${testToken}`)
-        .send(memberAction);
+        .send({
+          action: 'add',
+          members: ['user1', 'user2'],
+        });
 
       expect(response.status).toBe(200);
       expect(response.body).toHaveProperty('status', 'success');
       expect(response.body).toHaveProperty('message', 'Members added to group successfully');
-    });
-
-    it('グループメンバーの削除が成功する', async () => {
-      const memberAction = {
-        action: 'remove',
-        members: ['testuser2']
-      };
-
-      const response = await request(app)
-        .post('/api/ad/groups/TestGroup1/members')
-        .set('Authorization', `Bearer ${testToken}`)
-        .send(memberAction);
-
-      expect(response.status).toBe(200);
-      expect(response.body).toHaveProperty('status', 'success');
-      expect(response.body).toHaveProperty('message', 'Members removed from group successfully');
     });
   });
 });

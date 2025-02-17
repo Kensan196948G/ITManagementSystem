@@ -11,11 +11,14 @@ process.env.JWT_SECRET = 'test-secret';
 jest.setTimeout(10000);
 
 // テストヘルパー関数
-export const mockRequest = () => {
-  const req = {} as Request;
-  req.body = {};
-  req.query = {};
-  req.params = {};
+export const mockRequest = (options: Partial<Request> = {}) => {
+  const req = {
+    body: {},
+    query: {},
+    params: {},
+    headers: {},
+    ...options
+  } as Request;
   return req;
 };
 

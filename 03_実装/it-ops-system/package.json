@@ -1,22 +1,29 @@
 {
   "name": "it-ops-system",
   "version": "1.0.0",
-  "description": "IT Operations Management System",
-  "main": "index.js",
+  "description": "IT運用管理システム",
   "scripts": {
-    "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install",
-    "dev": "concurrently \"cd frontend && npm run dev\" \"cd backend && npm run dev\"",
-    "build": "concurrently \"cd frontend && npm run build\" \"cd backend && npm run build\"",
-    "test": "concurrently \"cd frontend && npm test\" \"cd backend && npm test\""
+    "start": "npm-run-all --parallel start:*",
+    "start:frontend": "cd frontend && npm start",
+    "start:backend": "cd backend && npm start",
+    "test": "npm-run-all --parallel test:*",
+    "test:frontend": "cd frontend && npm test",
+    "test:backend": "cd backend && npm test",
+    "test:e2e": "playwright test",
+    "build": "npm-run-all --parallel build:*",
+    "build:frontend": "cd frontend && npm run build",
+    "build:backend": "cd backend && npm run build",
+    "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install"
   },
-  "keywords": [
-    "it-operations",
-    "management",
-    "monitoring"
-  ],
-  "author": "",
-  "license": "ISC",
+  "dependencies": {
+    "npm-run-all": "^4.1.5"
+  },
   "devDependencies": {
-    "concurrently": "^8.2.0"
+    "@playwright/test": "^1.41.2",
+    "@types/node": "^20.11.16",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }
