@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/44</span>
+                <span class='fraction'>0/43</span>
             </div>
         
             
@@ -39,14 +39,14 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/5</span>
+                <span class='fraction'>0/3</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/44</span>
+                <span class='fraction'>0/43</span>
             </div>
         
             
@@ -135,13 +135,8 @@
 <a name='L70'></a><a href='#L70'>70</a>
 <a name='L71'></a><a href='#L71'>71</a>
 <a name='L72'></a><a href='#L72'>72</a>
-<a name='L73'></a><a href='#L73'>73</a>
-<a name='L74'></a><a href='#L74'>74</a>
-<a name='L75'></a><a href='#L75'>75</a>
-<a name='L76'></a><a href='#L76'>76</a>
-<a name='L77'></a><a href='#L77'>77</a>
-<a name='L78'></a><a href='#L78'>78</a>
-<a name='L79'></a><a href='#L79'>79</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<a name='L73'></a><a href='#L73'>73</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -171,10 +166,16 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -188,19 +189,6 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -226,6 +214,7 @@
 <span class="cstat-no" title="statement not covered" >import morgan from 'morgan';</span>
 <span class="cstat-no" title="statement not covered" >import { config } from 'dotenv';</span>
 <span class="cstat-no" title="statement not covered" >import rateLimit from 'express-rate-limit';</span>
+<span class="cstat-no" title="statement not covered" >import { requestLogger, errorLogger, errorHandler } from './middleware/errorHandling';</span>
 &nbsp;
 // ルーターのインポート
 <span class="cstat-no" title="statement not covered" >import authRouter from './routes/auth';</span>
@@ -248,12 +237,18 @@ const limiter = <span class="cstat-no" title="statement not covered" >rateLimit(
 &nbsp;
 // ミドルウェアの設定
 <span class="cstat-no" title="statement not covered" >app.use(helmet()); </span>// セキュリティヘッダーの設定
-<span class="cstat-no" title="statement not covered" >app.use(cors()); </span>// CORS設定
+<span class="cstat-no" title="statement not covered" >app.use(cors({</span>
+  origin: process.env.CORS_ORIGIN,
+  credentials: true
+})); // CORS設定
 <span class="cstat-no" title="statement not covered" >app.use(compression()); </span>// レスポンス圧縮
 <span class="cstat-no" title="statement not covered" >app.use(express.json()); </span>// JSONパーサー
 <span class="cstat-no" title="statement not covered" >app.use(express.urlencoded({ extended: true }));</span>
 <span class="cstat-no" title="statement not covered" >app.use(morgan('combined')); </span>// ログ出力
 <span class="cstat-no" title="statement not covered" >app.use(limiter); </span>// レート制限
+&nbsp;
+// リクエストロギングの有効化
+<span class="cstat-no" title="statement not covered" >app.use(requestLogger);</span>
 &nbsp;
 // ルートルーターの設定
 <span class="cstat-no" title="statement not covered" >app.use('/api/auth', authRouter);</span>
@@ -263,22 +258,9 @@ const limiter = <span class="cstat-no" title="statement not covered" >rateLimit(
 <span class="cstat-no" title="statement not covered" >app.use('/api/ad', adRouter);</span>
 <span class="cstat-no" title="statement not covered" >app.use('/api/m365', m365Router);</span>
 &nbsp;
-// エラーハンドリング
-<span class="cstat-no" title="statement not covered" >app.use(<span class="fstat-no" title="function not covered" >(e</span>rr: Error, req: express.Request, res: express.Response, next: express.NextFunction) =&gt; {</span>
-<span class="cstat-no" title="statement not covered" >  console.error(err.stack);</span>
-<span class="cstat-no" title="statement not covered" >  res.status(500).json({</span>
-    status: 'error',
-    message: 'Internal Server Error'
-  });
-});
-&nbsp;
-// 404ハンドリング
-<span class="cstat-no" title="statement not covered" >app.use(<span class="fstat-no" title="function not covered" >(r</span>eq: express.Request, res: express.Response) =&gt; {</span>
-<span class="cstat-no" title="statement not covered" >  res.status(404).json({</span>
-    status: 'error',
-    message: 'Not Found'
-  });
-});
+// エラーハンドリングミドルウェアの設定（必ず他のミドルウェアの後に配置）
+<span class="cstat-no" title="statement not covered" >app.use(errorLogger);</span>
+<span class="cstat-no" title="statement not covered" >app.use(errorHandler);</span>
 &nbsp;
 // サーバー起動
 const PORT = <span class="cstat-no" title="statement not covered" >process.env.PORT || 3000;</span>
@@ -304,7 +286,7 @@ const PORT = <span class="cstat-no" title="statement not covered" >process.env.P
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2025-02-17T02:15:36.064Z
+                at 2025-02-18T09:43:46.575Z
             </div>
         <script src="../prettify.js"></script>
         <script>

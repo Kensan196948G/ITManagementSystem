@@ -1,7 +1,13 @@
 import express from 'express';
-import { verifyToken } from './auth';
+import { SecurityMonitorService } from '../services/securityMonitorService';
+import { verifyToken } from '../middleware/auth';
+import LoggingService from '../services/loggingService';
+import { SecurityAuditService } from '../services/securityAuditService';
 
 const router = express.Router();
+const logger = LoggingService.getInstance();
+const securityMonitor = SecurityMonitorService.getInstance();
+const securityAudit = SecurityAuditService.getInstance();
 
 // 脅威検知状況の取得
 router.get('/threats', verifyToken, async (_req, res) => {
@@ -152,6 +158,105 @@ router.post('/scan', verifyToken, async (req, res) => {
       status: 'error',
       message: 'Failed to initiate security scan'
     });
+  }
+});
+
+// セキュリティダッシュボードデータの取得
+router.get('/dashboard', verifyToken, async (req, res) => {
+  try {
+    const timeWindow = {
+      start: new Date(Date.now() - 24 * 60 * 60 * 1000), // 過去24時間
+      end: new Date()
+    };
+
+    const [accessPatterns, activeAlerts] = await Promise.all([
+      securityAudit.getAccessPatternAnalysis(timeWindow),
+      securityMonitor.getActiveAlerts()
+    ]);
+
+    res.json({
+      accessPatterns,
+      activeAlerts,
+      summary: {
+        totalAccesses: accessPatterns.totalAttempts,
+        successRate: accessPatterns.successRate,
+        suspiciousActivities: accessPatterns.suspiciousActivities.length,
+        criticalAlerts: activeAlerts.critical || 0
+      }
+    });
+  } catch (error) {
+    logger.logError(error as Error, {
+      context: 'SecurityDashboard',
+      message: 'ダッシュボードデータの取得に失敗'
+    });
+    res.status(500).json({ error: 'データの取得に失敗しました' });
+  }
+});
+
+// リアルタイムアラート設定
+router.post('/alerts/config', verifyToken, async (req, res) => {
+  try {
+    const { thresholds } = req.body;
+    await securityMonitor.updateAlertThresholds(thresholds);
+    res.json({ message: 'アラート設定を更新しました' });
+  } catch (error) {
+    logger.logError(error as Error, {
+      context: 'SecurityAlerts',
+      message: 'アラート設定の更新に失敗'
+    });
+    res.status(500).json({ error: 'アラート設定の更新に失敗しました' });
+  }
+});
+
+// セキュリティレポートの生成
+router.get('/reports', verifyToken, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const timeWindow = {
+      start: new Date(startDate as string),
+      end: new Date(endDate as string)
+    };
+
+    const report = await securityAudit.generateSecurityReport(timeWindow);
+    res.json(report);
+  } catch (error) {
+    logger.logError(error as Error, {
+      context: 'SecurityReports',
+      message: 'レポート生成に失敗'
+    });
+    res.status(500).json({ error: 'レポートの生成に失敗しました' });
+  }
+});
+
+// アクセスパターン分析
+router.get('/analysis/patterns', verifyToken, async (req, res) => {
+  try {
+    const { userId, timeframe } = req.query;
+    const analysis = await securityAudit.analyzeUserAccessPatterns(
+      userId as string,
+      timeframe as string
+    );
+    res.json(analysis);
+  } catch (error) {
+    logger.logError(error as Error, {
+      context: 'SecurityAnalysis',
+      message: 'アクセスパターン分析に失敗'
+    });
+    res.status(500).json({ error: 'アクセスパターンの分析に失敗しました' });
+  }
+});
+
+// パフォーマンスメトリクス
+router.get('/metrics/performance', verifyToken, async (req, res) => {
+  try {
+    const metrics = await securityAudit.getPerformanceMetrics();
+    res.json(metrics);
+  } catch (error) {
+    logger.logError(error as Error, {
+      context: 'SecurityMetrics',
+      message: 'パフォーマンスメトリクスの取得に失敗'
+    });
+    res.status(500).json({ error: 'メトリクスの取得に失敗しました' });
   }
 });
 

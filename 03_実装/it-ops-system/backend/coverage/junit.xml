@@ -1,25 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="jest tests" tests="8" failures="0" errors="0" time="44.235">
-  <testsuite name="Debug Test Suite" errors="0" failures="0" skipped="0" timestamp="2025-02-17T02:15:16" time="1.139" tests="2">
-    <testcase classname="Debug Test Suite" name="basic assertion test" time="0.026">
+<testsuites name="jest tests" tests="8" failures="0" errors="0" time="26.674">
+  <testsuite name="Simple Test Suite" errors="0" failures="0" skipped="0" timestamp="2025-02-18T09:43:07" time="13.337" tests="4">
+    <testcase classname="Simple Test Suite" name="should pass a basic test" time="0.035">
     </testcase>
-    <testcase classname="Debug Test Suite" name="async operation test" time="0.114">
+    <testcase classname="Simple Test Suite" name="should handle async operations" time="0.001">
     </testcase>
-  </testsuite>
-  <testsuite name="Basic Test Setup" errors="0" failures="0" skipped="0" timestamp="2025-02-17T02:15:18" time="0.806" tests="2">
-    <testcase classname="Basic Test Setup" name="should run a basic test" time="0.004">
+    <testcase classname="Simple Test Suite" name="should handle arrays" time="0.002">
     </testcase>
-    <testcase classname="Basic Test Setup" name="should properly type check SystemMetrics" time="0.004">
+    <testcase classname="Simple Test Suite" name="should handle objects" time="0.003">
     </testcase>
   </testsuite>
-  <testsuite name="Simple Test Suite" errors="0" failures="0" skipped="0" timestamp="2025-02-17T02:15:18" time="0.578" tests="4">
-    <testcase classname="Simple Test Suite" name="should pass a basic test" time="0.003">
+  <testsuite name="Basic Test Setup" errors="0" failures="0" skipped="0" timestamp="2025-02-18T09:43:07" time="13.379" tests="2">
+    <testcase classname="Basic Test Setup" name="should run a basic test" time="0.036">
     </testcase>
-    <testcase classname="Simple Test Suite" name="should handle async operations" time="0">
+    <testcase classname="Basic Test Setup" name="should properly type check SystemMetrics" time="0.002">
     </testcase>
-    <testcase classname="Simple Test Suite" name="should handle arrays" time="0.001">
+  </testsuite>
+  <testsuite name="Debug Test Suite" errors="0" failures="0" skipped="0" timestamp="2025-02-18T09:43:07" time="13.536" tests="2">
+    <testcase classname="Debug Test Suite" name="basic assertion test" time="0.077">
     </testcase>
-    <testcase classname="Simple Test Suite" name="should handle objects" time="0.002">
+    <testcase classname="Debug Test Suite" name="async operation test" time="0.16">
     </testcase>
   </testsuite>
 </testsuites>

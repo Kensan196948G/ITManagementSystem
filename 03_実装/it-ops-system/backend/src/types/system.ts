@@ -98,6 +98,36 @@ export interface AuthUser {
   roles: string[];
 }
 
+// セキュリティ関連の型
+export interface PasswordPolicy {
+  minLength: number;
+  requireUppercase: boolean;
+  requireLowercase: boolean;
+  requireNumbers: boolean;
+  requireSpecialChars: boolean;
+  maxAge: number; // パスワードの有効期限（日数）
+  preventReuse: number; // 過去のパスワード再利用防止数
+}
+
+export interface SecurityConfig {
+  rateLimit: {
+    windowMs: number; // 制限時間（ミリ秒）
+    max: number; // 最大リクエスト数
+    message: string;
+  };
+  session: {
+    expiresIn: string; // トークンの有効期限
+    maxConcurrentSessions: number; // 同時セッション数の制限
+  };
+}
+
+export interface TokenBlacklist {
+  token: string;
+  expiresAt: Date;
+  userId: string;
+  reason: 'logout' | 'password_change' | 'security_breach';
+}
+
 // DTOインターフェース
 export interface ADUserCreateDto {
   sAMAccountName: string;
