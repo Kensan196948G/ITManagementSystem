@@ -10,9 +10,9 @@ import Users from '../pages/Users';
 import { GraphAPIPermissionCheck } from '../components/admin/GraphAPIPermissionCheck';
 
 export const AppRouter = () => {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
 
-  if (loading) {
+  if (isLoading) {
     return <div>Loading...</div>;
   }
 
@@ -89,7 +89,12 @@ export const AppRouter = () => {
         {/* Graph API パーミッション管理 - グローバル管理者のみ */}
         <Route 
           path="/admin/graph-permissions" 
-          element={<GraphAPIPermissionCheck />} 
+          element={
+            <GraphAPIPermissionCheck>
+              {/* 空のチャイルドレンとしてnullを渡す */}
+              {null}
+            </GraphAPIPermissionCheck>
+          } 
         />
       </Routes>
     </Router>

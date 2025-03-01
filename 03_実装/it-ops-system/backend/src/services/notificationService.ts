@@ -5,26 +5,53 @@ import { TokenCredentialAuthenticationProvider } from '@microsoft/microsoft-grap
 import LoggingService from './loggingService';
 
 const logger = LoggingService.getInstance();
+const isDevelopment = process.env.NODE_ENV === 'development' || process.env.AUTH_MODE === 'mock';
 
 export class NotificationService {
   private static instance: NotificationService;
-  private graphClient: Client;
-  private credential: TokenCredential;
+  private graphClient!: Client;
+  private credential!: TokenCredential;
   private readonly RETRY_ATTEMPTS = 3;
-  private readonly TOKEN_REFRESH_BUFFER = 300; // 5分前にトークンを更新
+  private isMockMode: boolean;
 
   private constructor() {
-    this.initializeGraphClient();
+    this.isMockMode = isDevelopment;
+    
+    if (!this.isMockMode) {
+      this.initializeGraphClient().catch(error => {
+        logger.logError(error as Error, {
+          context: 'GraphClientInit',
+          message: 'Failed to initialize Graph Client during construction'
+        });
+      });
+    } else {
+      logger.logInfo({
+        context: 'GraphClientInit',
+        message: '開発モードでGraph Clientをモックに設定しました'
+      });
+    }
   }
 
   private async initializeGraphClient(): Promise<void> {
+    if (this.isMockMode) {
+      // 開発モードではGraphClientの初期化をスキップ
+      return;
+    }
+    
     try {
+      const tenantId = process.env.AZURE_TENANT_ID;
+      const clientId = process.env.AZURE_CLIENT_ID;
+      const clientSecret = process.env.AZURE_CLIENT_SECRET;
+
+      if (!tenantId || !clientId || !clientSecret) {
+        throw new Error('Azure credentials are not fully set in environment variables.');
+      }
+
       this.credential = new ClientSecretCredential(
-        process.env.AZURE_TENANT_ID!,
-        process.env.AZURE_CLIENT_ID!,
-        process.env.AZURE_CLIENT_SECRET!,
+        tenantId,
+        clientId,
+        clientSecret,
         {
-          // トークン自動更新の設定
           retryOptions: {
             maxRetries: this.RETRY_ATTEMPTS,
             retryDelayInMs: 3000
@@ -33,48 +60,41 @@ export class NotificationService {
       );
 
       const authProvider = new TokenCredentialAuthenticationProvider(this.credential, {
-        // メール送信に必要な最小限のスコープを指定
-        scopes: ['https://graph.microsoft.com/Mail.Send'],
-        // トークンの自動更新を有効化
-        tokenRefreshBufferSeconds: this.TOKEN_REFRESH_BUFFER
+        scopes: ['https://graph.microsoft.com/.default']
       });
 
       this.graphClient = Client.initWithMiddleware({
         authProvider,
-        // タイムアウト設定を追加
-        fetchOptions: {
-          timeout: 10000 // 10秒
-        }
+        defaultVersion: 'v1.0'
       });
 
-      // 初期認証テスト
       await this.validateAuth();
     } catch (error) {
-      const err = error as Error;
-      logger.logError(err, { 
+      logger.logError(error as Error, {
         context: 'GraphClientAuth',
-        message: 'Graph Client初期化エラー',
-        details: err.message
+        message: 'Graph Client initialization error',
+        details: (error as Error).message
       });
-      throw new Error(`Microsoft Graph認証初期化エラー: ${err.message}`);
+      throw new Error(`Microsoft Graph authentication initialization failed: ${(error as Error).message}`);
     }
   }
 
   private async validateAuth(): Promise<void> {
+    if (this.isMockMode) {
+      // 開発モードでは認証検証をスキップ
+      return;
+    }
+    
     try {
       const senderAccount = process.env.MS_SENDER_ACCOUNT || 'notification@mirai-const.co.jp';
-      await this.graphClient
-        .api(`/users/${senderAccount}`)
-        .select('mail')
-        .get();
+      await this.graphClient.api(`/users/${senderAccount}`).select('mail').get();
     } catch (error) {
-      const err = error as Error;
-      logger.logError(err, {
+      logger.logError(error as Error, {
         context: 'GraphClientAuth',
-        message: '認証検証エラー',
-        details: err.message
+        message: 'Authentication validation failed',
+        details: (error as Error).message
       });
-      throw new Error('メール送信権限の検証に失敗しました');
+      throw new Error('Failed to validate email sending permissions.');
     }
   }
 
@@ -86,35 +106,41 @@ export class NotificationService {
   }
 
   public async sendAlertEmail(alert: Alert): Promise<void> {
+    if (this.isMockMode) {
+      logger.logInfo({
+        context: 'MockEmailNotification',
+        alertId: alert.id,
+        alertType: alert.type,
+        message: '開発モードでメール送信をシミュレーション',
+        mockEmail: {
+          subject: `[${alert.type.toUpperCase()}] System Alert: ${alert.source}`,
+          body: this.generateAlertEmailTemplate(alert)
+        }
+      });
+      return;
+    }
+    
     let retryCount = 0;
+    const recipients = process.env.ALERT_EMAIL_RECIPIENTS?.split(',') || [];
+
+    if (recipients.length === 0) {
+      logger.logError(new Error('No email recipients configured'), {
+        context: 'EmailNotification',
+        alertId: alert.id,
+        alertType: alert.type
+      });
+      return;
+    }
+
+    const senderAccount = process.env.MS_SENDER_ACCOUNT || 'notification@mirai-const.co.jp';
+
     while (retryCount < this.RETRY_ATTEMPTS) {
       try {
-        const recipients = process.env.ALERT_EMAIL_RECIPIENTS?.split(',') || [];
-        if (recipients.length === 0) {
-          logger.logWarning('メール受信者が設定されていません', {
-            alertId: alert.id,
-            alertType: alert.type
-          });
-          return;
-        }
-
-        const senderAccount = process.env.MS_SENDER_ACCOUNT || 'notification@mirai-const.co.jp';
-        
-        // メール送信前の権限チェック
-        try {
-          await this.validateAuth();
-        } catch (error) {
-          if (retryCount < this.RETRY_ATTEMPTS - 1) {
-            await this.initializeGraphClient();
-            retryCount++;
-            continue;
-          }
-          throw error;
-        }
+        await this.validateAuth();
 
         const message = {
           message: {
-            subject: `[${alert.type.toUpperCase()}] システムアラート: ${alert.source}`,
+            subject: `[${alert.type.toUpperCase()}] System Alert: ${alert.source}`,
             body: {
               contentType: 'HTML',
               content: this.generateAlertEmailTemplate(alert)
@@ -123,43 +149,40 @@ export class NotificationService {
               emailAddress: { address: email }
             })),
             from: {
-              emailAddress: {
-                address: process.env.SMTP_FROM || senderAccount
-              }
+              emailAddress: { address: process.env.SMTP_FROM || senderAccount }
             }
           },
           saveToSentItems: true
         };
 
-        await this.graphClient
-          .api(`/users/${senderAccount}/sendMail`)
-          .post(message);
+        await this.graphClient.api(`/users/${senderAccount}/sendMail`).post(message);
 
-        logger.logInfo('アラートメール送信成功', {
+        logger.logInfo({
+          context: 'EmailNotification',
           alertId: alert.id,
           recipients: recipients.length,
           alertType: alert.type,
           senderAccount,
-          retryCount
+          retryCount,
+          message: 'Alert email sent successfully'
         });
-        return;
 
+        return;
       } catch (error) {
-        const err = error as Error;
-        logger.logError(err, {
+        logger.logError(error as Error, {
           context: 'AlertEmailNotification',
           alertId: alert.id,
           retryCount,
-          message: 'メール送信エラー',
-          details: err.message
+          message: 'Email sending failed',
+          details: (error as Error).message
         });
 
         if (retryCount < this.RETRY_ATTEMPTS - 1) {
           retryCount++;
-          await new Promise(resolve => setTimeout(resolve, 3000)); // 3秒待機
-          continue;
+          await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds before retry
+        } else {
+          throw new Error(`Failed to send alert email after ${this.RETRY_ATTEMPTS} attempts: ${(error as Error).message}`);
         }
-        throw new Error(`アラートメール送信エラー (${retryCount}回リトライ後): ${err.message}`);
       }
     }
   }
@@ -168,17 +191,17 @@ export class NotificationService {
     return `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: ${this.getAlertColor(alert.type)}; border-bottom: 2px solid ${this.getAlertColor(alert.type)}; padding-bottom: 10px;">
-          ${this.getAlertTypeInJapanese(alert.type)} アラート
+          ${this.getAlertTypeInJapanese(alert.type)} Alert
         </h2>
         <div style="margin: 20px 0;">
-          <p style="margin: 10px 0;"><strong>発生源:</strong> ${alert.source}</p>
-          <p style="margin: 10px 0;"><strong>メッセージ:</strong> ${alert.message}</p>
-          <p style="margin: 10px 0;"><strong>発生時刻:</strong> ${alert.timestamp.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</p>
+          <p><strong>Source:</strong> ${alert.source}</p>
+          <p><strong>Message:</strong> ${alert.message}</p>
+          <p><strong>Timestamp:</strong> ${alert.timestamp.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</p>
         </div>
         ${alert.metadata ? `
           <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin-top: 20px;">
-            <h3 style="margin-top: 0;">詳細情報:</h3>
-            <pre style="margin: 0; white-space: pre-wrap;">${JSON.stringify(alert.metadata, null, 2)}</pre>
+            <h3>Details:</h3>
+            <pre style="white-space: pre-wrap;">${JSON.stringify(alert.metadata, null, 2)}</pre>
           </div>
         ` : ''}
       </div>
@@ -186,32 +209,23 @@ export class NotificationService {
   }
 
   private getAlertColor(type: string): string {
-    switch (type.toLowerCase()) {
-      case 'critical':
-        return '#FF0000';
-      case 'error':
-        return '#FF4444';
-      case 'warning':
-        return '#FFBB33';
-      case 'info':
-        return '#33B5E5';
-      default:
-        return '#333333';
-    }
+    const colors: Record<string, string> = {
+      critical: '#FF0000',
+      error: '#FF4444',
+      warning: '#FFBB33',
+      info: '#33B5E5',
+      default: '#333333'
+    };
+    return colors[type.toLowerCase()] || colors.default;
   }
 
   private getAlertTypeInJapanese(type: string): string {
-    switch (type.toLowerCase()) {
-      case 'critical':
-        return '緊急';
-      case 'error':
-        return 'エラー';
-      case 'warning':
-        return '警告';
-      case 'info':
-        return '情報';
-      default:
-        return type;
-    }
+    const types: Record<string, string> = {
+      critical: '緊急',
+      error: 'エラー',
+      warning: '警告',
+      info: '情報'
+    };
+    return types[type.toLowerCase()] || type;
   }
 }

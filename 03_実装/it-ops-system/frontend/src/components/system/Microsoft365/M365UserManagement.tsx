@@ -35,10 +35,10 @@ import {
 import { M365User, M365License, M365Service, ApiResponse } from '../../../types/api';
 
 interface M365UserManagementProps {
-  onError?: (error: string) => void;
+  onError: (message: string) => void;
 }
 
-const M365UserManagement: React.FC<M365UserManagementProps> = ({ onError }) => {
+export const M365UserManagement: React.FC<M365UserManagementProps> = ({ onError }) => {
   const [users, setUsers] = useState<M365User[]>([]);
   const [licenses, setLicenses] = useState<M365License[]>([]);
   const [loading, setLoading] = useState(true);
@@ -303,5 +303,3 @@ const M365UserManagement: React.FC<M365UserManagementProps> = ({ onError }) => {
     </Box>
   );
 };
-
-export default M365UserManagement;

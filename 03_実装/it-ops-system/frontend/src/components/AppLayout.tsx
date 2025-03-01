@@ -1,4 +1,17 @@
-// ...existing code...
+import React, { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  Box,
+  Container,
+  CssBaseline,
+  CircularProgress,
+  Alert,
+  Typography,
+  Button,
+} from '@mui/material';
+import { useAuth } from '../contexts/AuthContext';
+import { SideNav } from './SideNav';
+import { ErrorBoundary } from 'react-error-boundary';
 
 export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isLoading, error } = useAuth();
@@ -8,7 +21,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     if (!isLoading && !user) {
       navigate('/login');
     }
-  }, [user, isLoading, navigate]);
+  }, [isLoading, user, navigate]);
 
   if (isLoading) {
     return (
@@ -36,7 +49,13 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
       <CssBaseline />
       <SideNav />
       <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
-        <ErrorBoundary>
+        <ErrorBoundary
+          fallback={
+            <Alert severity="error">
+              <Typography>予期せぬエラーが発生しました</Typography>
+            </Alert>
+          }
+        >
           {children}
         </ErrorBoundary>
       </Box>

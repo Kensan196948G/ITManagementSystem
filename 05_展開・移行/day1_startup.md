@@ -1,269 +1,144 @@
-# Day 1 展開開始計画
+# 🚀 IT運用システム Day1スタートアップガイド
 
-## 1. キックオフミーティング
+## 📋 概要
 
-### 1.1 アジェンダ
-```yaml
-09:00-09:30: オープニング
-  - プロジェクト概要説明
-  - 目標と成功基準の確認
-  - タイムラインの共有
+このガイドは、IT運用システムの展開フェーズDay1の実行に関わるチームメンバー向けに作成されています。Day1では、基本的なインフラストラクチャのセットアップと初期構成を行います。
 
-09:30-10:30: 実施計画の詳細説明
-  - 展開フェーズの手順確認
-  - 役割と責任の確認
-  - リスクと対策の共有
+## ✅ 前提条件
 
-10:30-11:30: チーム体制の確認
-  - チームメンバーの紹介
-  - 担当領域の確認
-  - コミュニケーション方法の確認
+1. 以下のツールがインストールされていること
+   - 🔧 Azure CLI (最新バージョン)
+   - ⚙️ kubectl (最新バージョン)
+   - 🏗️ Terraform (バージョン1.0以上)
+   - 🔄 Helm (バージョン3.0以上)
 
-11:30-12:00: 質疑応答
-  - 懸念事項の共有
-  - リスクの洗い出し
-  - 対策の検討
-```
+2. 必要な権限
+   - 🔑 Azureサブスクリプションの管理者権限
+   - 🔐 Kubernetes管理者権限
 
-### 1.2 参加者リスト
-```yaml
-プロジェクト管理:
-  - プロジェクトマネージャー
-  - テクニカルリード
-  - 品質管理責任者
+## 🔍 事前準備
 
-開発チーム:
-  - フロントエンド開発者
-  - バックエンド開発者
-  - インフラエンジニア
+### 🌍 1. 環境変数の設定
 
-運用チーム:
-  - 運用リーダー
-  - 監視担当者
-  - サポートメンバー
+以下の環境変数を設定します。
 
-ステークホルダー:
-  - システム管理者
-  - セキュリティ担当者
-  - ユーザー代表
-```
-
-## 2. 環境構築開始
-
-### 2.1 初期セットアップ
 ```bash
-# Kubernetesクラスタ構築
-az aks create -g production-rg -n production-cluster \
-  --node-count 3 \
-  --enable-cluster-autoscaler \
-  --min-count 3 \
-  --max-count 5
+# 共通環境変数
+export ENVIRONMENT="staging"                     # 環境名 (staging/production)
+export AZURE_SUBSCRIPTION="your-subscription-id" # Azureサブスクリプションのセットアップ
+export RESOURCE_GROUP="it-ops-$ENVIRONMENT-rg"   # リソースグループ名
+export CLUSTER_NAME="it-ops-$ENVIRONMENT-aks"    # AKSクラスタ名
+export ACR_NAME="itops$ENVIRONMENT"              # Azure Container Registry名（英数小文字のみ）
 
-# 監視ツールのデプロイ
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo add grafana https://grafana.github.io/helm-charts
-helm repo update
-
-# Prometheusインストール
-helm install prometheus prometheus-community/prometheus \
-  --namespace monitoring \
-  --create-namespace
-
-# Grafanaインストール
-helm install grafana grafana/grafana \
-  --namespace monitoring \
-  --set persistence.enabled=true
+# データベース接続情報
+export MONGODB_HOST="mongodb.$ENVIRONMENT.local"
+export MONGODB_PORT="27017"
+export MONGODB_USER="admin"
+export MONGODB_PASSWORD="secure-password"  # 本番環境では適切に保護された方法で管理してください
 ```
 
-### 2.2 アプリケーションデプロイ
+### 🔐 2. 資格情報の確認
+
 ```bash
-# フロントエンドデプロイ
-kubectl apply -f k8s/frontend-deployment.yaml
-kubectl apply -f k8s/frontend-service.yaml
+# Azureにログイン
+az login
 
-# バックエンドデプロイ
-kubectl apply -f k8s/backend-deployment.yaml
-kubectl apply -f k8s/backend-service.yaml
+# サブスクリプションの設定
+az account set --subscription "$AZURE_SUBSCRIPTION"
 
-# 設定の適用
-kubectl apply -f k8s/configmaps/
-kubectl apply -f k8s/secrets/
+# サブスクリプション情報の確認
+az account show
 ```
 
-## 3. チーム体制確立
+## 🚀 展開手順
 
-### 3.1 役割と責任
-```yaml
-運用リーダー:
-  責任:
-    - 全体の運用統括
-    - チーム管理
-    - 問題解決の指揮
-  権限:
-    - リソース配分の決定
-    - 緊急時の判断
-    - エスカレーション判断
+### 📝 1. 実行スクリプトの準備
 
-監視担当:
-  責任:
-    - システム状態の監視
-    - アラート対応
-    - 日次報告作成
-  権限:
-    - 監視設定の調整
-    - 一次対応の実施
-    - エスカレーションの判断
+Day1実行スクリプト（`day1_execution.sh`）が最新であることを確認してください。必要に応じて環境に合わせた調整を行います。
 
-サポートチーム:
-  責任:
-    - ユーザーサポート
-    - 問題切り分け
-    - ドキュメント管理
-  権限:
-    - 一般的な問題解決
-    - マニュアルの更新
-    - 改善提案の提出
+```bash
+# スクリプトの実行権限を確認
+chmod +x day1_execution.sh
+
+# スクリプト内容の確認
+cat day1_execution.sh
 ```
 
-### 3.2 コミュニケーション体制
-```yaml
-定例ミーティング:
-  朝会:
-    時間: 9:00-9:30
-    内容:
-      - 日次タスク確認
-      - 問題点共有
-      - リソース配分確認
+### ▶️ 2. スクリプトの実行
 
-  週次レビュー:
-    時間: 金曜 16:00-17:00
-    内容:
-      - 週間サマリー
-      - KPI確認
-      - 次週計画確認
+環境変数が正しく設定された状態で、実行スクリプトを実行します。
 
-緊急連絡体制:
-  優先度高:
-    - 電話連絡
-    - チャット@mention
-    - エスカレーション
-
-  優先度中:
-    - チャット通知
-    - メール連絡
-
-  優先度低:
-    - チケット作成
-    - 定例報告
+```bash
+./day1_execution.sh
 ```
 
-## 4. 監視体制の確立
+スクリプトは以下の主要なタスクを実行します:
+- 🏗️ リソースグループの作成
+- 🌐 AKSクラスタの作成
+- 🗄️ ACRの作成とAKSとの連携
+- 🔖 名前空間の設定
+- 📊 監視ツール（PrometheusとGrafana）のデプロイ
+- 💾 バックアップ設定
+- 🚨 アラートルールの設定
 
-### 4.1 監視項目設定
-```yaml
-システムメトリクス:
-  - CPU使用率
-  - メモリ使用率
-  - ディスク使用率
-  - ネットワークトラフィック
+### 🔎 3. デプロイ結果の確認
 
-アプリケーションメトリクス:
-  - レスポンスタイム
-  - エラーレート
-  - アクティブユーザー数
-  - トランザクション数
+デプロイが完了したら、以下のコマンドで結果を確認します。
 
-ビジネスメトリクス:
-  - ユーザーアクティビティ
-  - 機能利用率
-  - エラー影響度
-  - SLA達成状況
+```bash
+# AKSクラスタの状態確認
+az aks show --resource-group $RESOURCE_GROUP --name $CLUSTER_NAME
+
+# Kubernetesリソースの確認
+kubectl get pods,svc,deploy -n production
+kubectl get pods,svc -n monitoring
+
+# Grafanaへのアクセス方法
+kubectl get secret --namespace monitoring grafana -o jsonpath="{.data.admin-password}" | base64 --decode ; echo
+kubectl port-forward -n monitoring svc/grafana 3000:80
+# ブラウザで http://localhost:3000 にアクセス (ユーザー名: admin)
 ```
 
-### 4.2 アラート設定
-```yaml
-重大アラート:
-  条件:
-    - システム停止
-    - データ損失リスク
-    - セキュリティ侵害
-  通知:
-    - 即時電話連絡
-    - チーム全体通知
-    - 経営層報告
+## 🛠️ トラブルシューティング
 
-警告アラート:
-  条件:
-    - 性能劣化
-    - リソース逼迫
-    - エラー増加
-  通知:
-    - チャット通知
-    - メール通知
-    - チケット作成
+### ⚠️ 一般的な問題と解決策
 
-情報アラート:
-  条件:
-    - 定期メンテナンス
-    - リソース使用状況
-    - バックアップ完了
-  通知:
-    - ダッシュボード表示
-    - 日次レポート
-    - ログ記録
-```
+1. Azure CLIログインエラー
+   - 🔄 認証情報が期限切れの場合は `az login` を再実行
+   - 🔍 サブスクリプションアクセス権を確認
 
-## 5. 運用プロセスの最適化
+2. AKSクラスタ作成エラー
+   - 📊 クォータ制限を確認
+   - 🔍 リソースプロバイダーが登録されているか確認
+   - 💻 コマンド: `az provider register --namespace Microsoft.ContainerService`
 
-### 5.1 標準運用手順
-```yaml
-日次タスク:
-  朝:
-    - システム状態確認
-    - アラート確認
-    - ログ確認
-  昼:
-    - パフォーマンス確認
-    - ユーザー問い合わせ対応
-  夕:
-    - バックアップ確認
-    - 日次レポート作成
+3. Helmインストールエラー
+   - 🔄 リポジトリを更新: `helm repo update`
+   - 🔒 TLSエラーの場合: `helm repo add --insecure-skip-tls-verify [repo-name] [url]`
 
-週次タスク:
-  - パフォーマンス分析
-  - キャパシティ計画
-  - セキュリティチェック
+4. バックアップ設定エラー
+   - 🔍 Secret存在確認: `kubectl get secret mongodb-credentials -n production`
+   - 💾 PVC確認: `kubectl get pvc -n production`
 
-月次タスク:
-  - システム全体診断
-  - パッチ適用計画
-  - 改善提案レビュー
-```
+## ⏭️ 次のステップ
 
-### 5.2 問題管理プロセス
-```yaml
-問題検知:
-  - 監視アラート
-  - ユーザー報告
-  - 定期チェック
+Day1の実行が完了した後、以下のタスクを実施します：
 
-影響度評価:
-  - ユーザー影響
-  - ビジネス影響
-  - システム影響
+1. 📅 Day2の準備
+   - 🏗️ コンテナイメージのビルドとプッシュ
+   - 📝 デプロイメント設定の準備
 
-対応手順:
-  初動対応:
-    - 状況確認
-    - 一時対策実施
-    - 報告
+2. 📊 監視ダッシュボードの設定
+   - 📈 Grafanaダッシュボードのインポート
+   - 🔔 アラート通知の設定
 
-  本格対応:
-    - 原因分析
-    - 恒久対策立案
-    - 改善実施
+3. 👥 運用チームへの引き継ぎ準備
+   - 🔑 アクセス権限の設定
+   - 📚 運用マニュアルの最終確認
 
-  フォローアップ:
-    - 効果確認
-    - 文書化
-    - 水平展開
+## 📚 参考資料
+
+- [🔗 Azure Kubernetes Service (AKS) ドキュメント](https://docs.microsoft.com/ja-jp/azure/aks/)
+- [🔗 Prometheus オペレータガイド](https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/user-guides/getting-started.md)
+- [🔗 Grafana ドキュメント](https://grafana.com/docs/grafana/latest/)
+- [🔗 IT運用システム実装仕様書](../03_実装/it-ops-system/README.md)

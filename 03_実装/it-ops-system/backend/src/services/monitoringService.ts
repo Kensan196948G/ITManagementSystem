@@ -1,4 +1,5 @@
-import { SystemMetrics } from '../types/system';
+import { Alert, SystemMetrics } from '../types/system';
+import { NotificationService } from './notificationService';
 import os from 'os';
 import { promisify } from 'util';
 import { exec } from 'child_process';
@@ -7,10 +8,17 @@ import LoggingService from './loggingService';
 const execAsync = promisify(exec);
 const logger = LoggingService.getInstance();
 
+type AlertSeverityType = 'critical' | 'high';
+
 export class MonitoringService {
   private static instance: MonitoringService;
   private metricsInterval: NodeJS.Timeout | null = null;
   private readonly collectionInterval: number;
+
+  // Define thresholds as constants
+  private static readonly CPU_THRESHOLD = 90;
+  private static readonly MEMORY_THRESHOLD = 85;
+  private static readonly DISK_THRESHOLD = 90;
 
   private constructor() {
     this.collectionInterval = parseInt(process.env.METRICS_COLLECTION_INTERVAL || '30000');
@@ -59,14 +67,9 @@ export class MonitoringService {
     const networkStats = await this.getNetworkStats();
 
     const metrics: SystemMetrics = {
-      timestamp: new Date(),
       cpu: {
         usage: cpuUsage * 100,
-        temperature: await this.getCpuTemperature(),
-        cores: os.cpus().map((core, id) => ({
-          id,
-          usage: this.calculateCoreUsage(core)
-        }))
+        temperature: await this.getCpuTemperature()
       },
       memory: {
         total: totalMemory,
@@ -81,7 +84,8 @@ export class MonitoringService {
       network: {
         bytesIn: networkStats.bytesIn,
         bytesOut: networkStats.bytesOut,
-        connections: networkStats.connections
+        packetsIn: 0,
+        packetsOut: 0
       }
     };
 
@@ -100,12 +104,6 @@ export class MonitoringService {
     }
   }
 
-  private calculateCoreUsage(core: os.CpuInfo): number {
-    const total = Object.values(core.times).reduce((acc, time) => acc + time, 0);
-    const idle = core.times.idle;
-    return ((total - idle) / total) * 100;
-  }
-
   private parseDiskInfo(diskInfo: string): { total: number; used: number; free: number } {
     const lines = diskInfo.split('\n').filter(line => line.trim());
     let total = 0;
@@ -113,7 +111,7 @@ export class MonitoringService {
 
     // ヘッダー行をスキップ
     for (let i = 1; i < lines.length; i++) {
-      const [caption, freeSpace, size] = lines[i].trim().split(/\s+/);
+      const [, freeSpace, size] = lines[i].trim().split(/\s+/);
       if (size && freeSpace) {
         total += parseInt(size);
         free += parseInt(freeSpace);
@@ -185,79 +183,77 @@ export class MonitoringService {
     this.checkAlerts(metrics);
   }
 
+  // Helper function to create and send alerts
+  private createAndSendAlert(
+    idPrefix: string, 
+    alertType: 'critical' | 'error', 
+    message: string, 
+    usage: number, 
+    threshold: number
+  ): void {
+    const severity: AlertSeverityType = alertType === 'critical' ? 'critical' : 'high';
+    
+    const alert: Alert = {
+      id: `${idPrefix}-${Date.now()}`,
+      type: alertType,
+      source: 'system-monitor',
+      message,
+      severity,
+      timestamp: new Date(),
+      acknowledged: false,
+      metadata: {
+        usage,
+        threshold
+      }
+    };
+
+    logger.logSecurity({
+      userId: 'system',
+      event: message,
+      severity,
+      details: {
+        usage,
+        threshold
+      }
+    });
+
+    NotificationService.getInstance().sendAlertEmail(alert);
+  }
+
   private checkAlerts(metrics: SystemMetrics): void {
-    // CPU使用率のアラート
-    if (metrics.cpu.usage > 90) {
-      const alert: Alert = {
-        id: `cpu-${Date.now()}`,
-        type: 'critical',
-        source: 'system-monitor',
-        message: `High CPU Usage: ${metrics.cpu.usage.toFixed(1)}%`,
-        timestamp: new Date(),
-        acknowledged: false
-      };
-      
-      logger.logSecurity({
-        userId: 'system',
-        event: 'High CPU Usage',
-        severity: 'high',
-        details: {
-          usage: metrics.cpu.usage,
-          threshold: 90
-        }
-      });
-
-      NotificationService.getInstance().sendAlertEmail(alert);
+    // CPU Usage Alert
+    if (metrics.cpu.usage > MonitoringService.CPU_THRESHOLD) {
+      this.createAndSendAlert(
+        'cpu',
+        'critical',
+        `High CPU Usage: ${metrics.cpu.usage.toFixed(1)}%`,
+        metrics.cpu.usage,
+        MonitoringService.CPU_THRESHOLD
+      );
     }
 
-    // メモリ使用率のアラート
+    // Memory Usage Alert
     const memoryUsage = (metrics.memory.used / metrics.memory.total) * 100;
-    if (memoryUsage > 85) {
-      const alert: Alert = {
-        id: `memory-${Date.now()}`,
-        type: 'error',
-        source: 'system-monitor',
-        message: `High Memory Usage: ${memoryUsage.toFixed(1)}%`,
-        timestamp: new Date(),
-        acknowledged: false
-      };
-
-      logger.logSecurity({
-        userId: 'system',
-        event: 'High Memory Usage',
-        severity: 'high',
-        details: {
-          usage: memoryUsage,
-          threshold: 85
-        }
-      });
-
-      NotificationService.getInstance().sendAlertEmail(alert);
+    if (memoryUsage > MonitoringService.MEMORY_THRESHOLD) {
+      this.createAndSendAlert(
+        'memory',
+        'error',
+        `High Memory Usage: ${memoryUsage.toFixed(1)}%`,
+        memoryUsage,
+        MonitoringService.MEMORY_THRESHOLD
+      );
     }
 
-    // ディスク使用率のアラート
+    // Disk Usage Alert
     const diskUsage = (metrics.disk.used / metrics.disk.total) * 100;
-    if (diskUsage > 90) {
-      const alert: Alert = {
-        id: `disk-${Date.now()}`,
-        type: 'critical',
-        source: 'system-monitor',
-        message: `High Disk Usage: ${diskUsage.toFixed(1)}%`,
-        timestamp: new Date(),
-        acknowledged: false
-      };
-
-      logger.logSecurity({
-        userId: 'system',
-        event: 'High Disk Usage',
-        severity: 'critical',
-        details: {
-          usage: diskUsage,
-          threshold: 90
-        }
-      });
-
-      NotificationService.getInstance().sendAlertEmail(alert);
+    if (diskUsage > MonitoringService.DISK_THRESHOLD) {
+      this.createAndSendAlert(
+        'disk',
+        'critical',
+        `High Disk Usage: ${diskUsage.toFixed(1)}%`,
+        diskUsage,
+        MonitoringService.DISK_THRESHOLD
+      );
     }
   }
 }

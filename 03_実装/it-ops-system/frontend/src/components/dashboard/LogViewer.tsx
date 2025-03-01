@@ -16,12 +16,15 @@ import {
   MenuItem,
   SelectChangeEvent,
   Typography,
+  InputAdornment,
 } from '@mui/material';
 import {
   Error as ErrorIcon,
   Warning as WarningIcon,
   Info as InfoIcon,
   BugReport as DebugIcon,
+  Search as SearchIcon,
+  FilterList as FilterIcon,
 } from '@mui/icons-material';
 import { LogEntry } from '../../types/api';
 import { formatDistance } from 'date-fns';
@@ -39,15 +42,15 @@ const LogViewer: React.FC<LogViewerProps> = ({ logs }) => {
   const getLogLevelIcon = (level: LogEntry['level']) => {
     switch (level) {
       case 'error':
-        return <ErrorIcon color="error" fontSize="small" />;
+        return <ErrorIcon sx={{ color: '#f44336' }} fontSize="small" />;
       case 'warning':
-        return <WarningIcon color="warning" fontSize="small" />;
+        return <WarningIcon sx={{ color: '#ff9800' }} fontSize="small" />;
       case 'info':
-        return <InfoIcon color="info" fontSize="small" />;
+        return <InfoIcon sx={{ color: '#2196f3' }} fontSize="small" />;
       case 'debug':
-        return <DebugIcon color="action" fontSize="small" />;
+        return <DebugIcon sx={{ color: '#757575' }} fontSize="small" />;
       default:
-        return <InfoIcon fontSize="small" />;
+        return <InfoIcon sx={{ color: '#757575' }} fontSize="small" />;
     }
   };
 
@@ -73,13 +76,11 @@ const LogViewer: React.FC<LogViewerProps> = ({ logs }) => {
     });
   };
 
-  // 利用可能なソースのリストを生成
   const availableSources = useMemo(() => {
     const sources = new Set(logs.map(log => log.source));
     return Array.from(sources);
   }, [logs]);
 
-  // フィルタリングされたログ
   const filteredLogs = useMemo(() => {
     return logs.filter(log => {
       const matchesSearch = 
@@ -93,14 +94,21 @@ const LogViewer: React.FC<LogViewerProps> = ({ logs }) => {
 
   return (
     <Box>
-      <Box sx={{ mb: 2, display: 'flex', gap: 2 }}>
+      <Box sx={{ mb: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
         <TextField
           size="small"
-          label="検索"
+          placeholder="ログを検索..."
           variant="outlined"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          sx={{ flexGrow: 1 }}
+          sx={{ flexGrow: 1, minWidth: '200px' }}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon sx={{ color: 'action.active' }} />
+              </InputAdornment>
+            ),
+          }}
         />
         <FormControl size="small" sx={{ minWidth: 120 }}>
           <InputLabel>ログレベル</InputLabel>
@@ -108,6 +116,9 @@ const LogViewer: React.FC<LogViewerProps> = ({ logs }) => {
             value={levelFilter}
             label="ログレベル"
             onChange={(e: SelectChangeEvent) => setLevelFilter(e.target.value)}
+            startAdornment={
+              <FilterIcon sx={{ color: 'action.active', mr: 1 }} />
+            }
           >
             <MenuItem value="all">全て</MenuItem>
             <MenuItem value="error">エラー</MenuItem>
@@ -122,6 +133,9 @@ const LogViewer: React.FC<LogViewerProps> = ({ logs }) => {
             value={sourceFilter}
             label="ソース"
             onChange={(e: SelectChangeEvent) => setSourceFilter(e.target.value)}
+            startAdornment={
+              <FilterIcon sx={{ color: 'action.active', mr: 1 }} />
+            }
           >
             <MenuItem value="all">全て</MenuItem>
             {availableSources.map(source => (
@@ -131,14 +145,23 @@ const LogViewer: React.FC<LogViewerProps> = ({ logs }) => {
         </FormControl>
       </Box>
 
-      <TableContainer component={Paper} sx={{ maxHeight: 400 }}>
+      <TableContainer
+        component={Paper}
+        sx={{
+          maxHeight: 400,
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+          '& .MuiTableCell-root': {
+            borderColor: 'rgba(224, 224, 224, 0.5)',
+          },
+        }}
+      >
         <Table stickyHeader size="small">
           <TableHead>
             <TableRow>
-              <TableCell>レベル</TableCell>
-              <TableCell>タイムスタンプ</TableCell>
-              <TableCell>ソース</TableCell>
-              <TableCell>メッセージ</TableCell>
+              <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>レベル</TableCell>
+              <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>タイムスタンプ</TableCell>
+              <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>ソース</TableCell>
+              <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>メッセージ</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -154,7 +177,15 @@ const LogViewer: React.FC<LogViewerProps> = ({ logs }) => {
               </TableRow>
             ) : (
               filteredLogs.map((log) => (
-                <TableRow key={log.id} hover>
+                <TableRow
+                  key={log.id}
+                  hover
+                  sx={{
+                    '&:hover': {
+                      backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                    },
+                  }}
+                >
                   <TableCell>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       {getLogLevelIcon(log.level)}
@@ -162,12 +193,15 @@ const LogViewer: React.FC<LogViewerProps> = ({ logs }) => {
                         label={log.level.toUpperCase()}
                         size="small"
                         color={getLogLevelColor(log.level)}
+                        sx={{ minWidth: 70 }}
                       />
                     </Box>
                   </TableCell>
-                  <TableCell>{formatTimestamp(log.timestamp)}</TableCell>
+                  <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatTimestamp(log.timestamp)}</TableCell>
                   <TableCell>{log.source}</TableCell>
-                  <TableCell>{log.message}</TableCell>
+                  <TableCell sx={{ maxWidth: '400px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {log.message}
+                  </TableCell>
                 </TableRow>
               ))
             )}

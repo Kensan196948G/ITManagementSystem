@@ -1,8 +1,22 @@
+import { config as dotenvConfig } from 'dotenv';
 import { IAppConfig } from '../types/config';
+
+dotenvConfig();
+
+const parseNumber = (value: string | undefined, defaultValue: number): number => {
+  const parsed = parseInt(value || '', 10);
+  return isNaN(parsed) ? defaultValue : parsed;
+};
+
+const parseFloatNumber = (value: string | undefined, defaultValue: number): number => {
+  const parsed = parseFloat(value || '');
+  return isNaN(parsed) ? defaultValue : parsed;
+};
 
 export const config: IAppConfig = {
   api: {
-    // ...existing code...
+    port: parseNumber(process.env.PORT, 3001),
+    corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:3000'
   },
   auth: {
     requiredPermissions: {
@@ -25,7 +39,28 @@ export const config: IAppConfig = {
       }
     },
     securityGroupsPrefix: process.env.SECURITY_GROUPS_PREFIX || 'IT-Ops',
-    defaultGroups: (process.env.REQUIRED_SECURITY_GROUPS || '').split(',')
+    defaultGroups: (process.env.REQUIRED_SECURITY_GROUPS || '')
+      .split(',')
+      .map(group => group.trim())
+      .filter(Boolean)
   },
-  // ...existing code...
+  monitoring: {
+    checkInterval: parseNumber(process.env.MONITORING_CHECK_INTERVAL, 60000),
+    alertThresholds: {
+      cpu: parseFloatNumber(process.env.CPU_THRESHOLD, 80),
+      memory: parseFloatNumber(process.env.MEMORY_THRESHOLD, 85),
+      disk: parseFloatNumber(process.env.DISK_THRESHOLD, 90)
+    }
+  },
+  security: {
+    session: {
+      expiresIn: process.env.JWT_EXPIRES_IN || '24h',
+      maxConcurrentSessions: parseNumber(process.env.MAX_CONCURRENT_SESSIONS, 3)
+    },
+    rateLimit: {
+      windowMs: 15 * 60 * 1000, // 15 minutes
+      max: parseNumber(process.env.RATE_LIMIT_MAX, 100),
+      message: process.env.RATE_LIMIT_MESSAGE || 'リクエスト制限を超過しました。しばらく待ってから再試行してください。'
+    }
+  }
 };

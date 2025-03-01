@@ -4,7 +4,7 @@ import 'winston-daily-rotate-file';
 
 class LoggingService {
   private static instance: LoggingService;
-  private logger: winston.Logger;
+  private logger!: winston.Logger;  // 明示的な初期化遅延を示す "!" を追加
 
   private constructor() {
     this.initializeLogger();
@@ -118,16 +118,18 @@ class LoggingService {
     });
   }
 
-  public async queryLogs(options: {
-    startDate: Date;
-    endDate: Date;
-    type?: string;
-    level?: string;
-    limit?: number;
-    skip?: number;
-  }): Promise<LogEntry[]> {
-    // 実際の実装ではログストレージから検索を行う
-    // このサンプルでは単純な実装を示しています
+  public async queryLogs(
+    // 将来の実装のための型定義
+    _options?: {
+      startDate: Date;
+      endDate: Date;
+      type?: string;
+      level?: string;
+      limit?: number;
+      skip?: number;
+    }
+  ): Promise<LogEntry[]> {
+    // TODO: 将来的な実装のためのスタブメソッド
     return [];
   }
 }

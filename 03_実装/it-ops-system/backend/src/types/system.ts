@@ -41,14 +41,9 @@ export interface M365License {
 
 // システム監視関連の型
 export interface SystemMetrics {
-  timestamp: Date;
   cpu: {
     usage: number;
-    temperature: number;
-    cores: Array<{
-      id: number;
-      usage: number;
-    }>;
+    temperature?: number;
   };
   memory: {
     total: number;
@@ -63,19 +58,22 @@ export interface SystemMetrics {
   network: {
     bytesIn: number;
     bytesOut: number;
-    connections: number;
+    packetsIn: number;
+    packetsOut: number;
   };
 }
 
 export interface Alert {
   id: string;
-  type: 'info' | 'warning' | 'error' | 'critical';
-  message: string;
+  type: 'info' | 'warning' | 'error' | 'critical' | 'security_anomaly';
   source: string;
+  message: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
   timestamp: Date;
   acknowledged: boolean;
   acknowledgedBy?: string;
   acknowledgedAt?: Date;
+  metadata?: Record<string, any>;
 }
 
 export interface LogEntry {
@@ -84,7 +82,7 @@ export interface LogEntry {
   level: 'debug' | 'info' | 'warning' | 'error';
   source: string;
   message: string;
-  metadata: Record<string, any>;
+  metadata?: Record<string, any>;
 }
 
 export interface SystemError extends Error {
@@ -94,6 +92,7 @@ export interface SystemError extends Error {
 
 export interface AuthUser {
   id: string;
+  email: string;
   username: string;
   roles: string[];
 }
@@ -126,6 +125,29 @@ export interface TokenBlacklist {
   expiresAt: Date;
   userId: string;
   reason: 'logout' | 'password_change' | 'security_breach';
+}
+
+export interface SecurityAuditEntry {
+  userId: string;
+  action: string;
+  resource: string;
+  timestamp: Date;
+  success: boolean;
+  details?: Record<string, any>;
+}
+
+export interface AccessAttempt {
+  userId: string;
+  resource: string;
+  timestamp: Date;
+  success: boolean;
+  ipAddress: string;
+  userAgent?: string;
+}
+
+export interface UserRole {
+  isGlobalAdmin: boolean;
+  permissions: string[];
 }
 
 // DTOインターフェース

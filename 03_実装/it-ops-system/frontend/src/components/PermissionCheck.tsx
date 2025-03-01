@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Alert, CircularProgress, Container, Typography } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
-import { api } from '../services/api';
+import { authApi } from '../services/api';
 
 interface PermissionCheckProps {
   resource: string;
@@ -28,13 +28,13 @@ export const PermissionCheck: React.FC<PermissionCheckProps> = ({
           return;
         }
 
-        const response = await api.post('/auth/check-permission', {
+        const allowed = await authApi.checkPermission({
           userEmail: user.email,
           check: { resource, action }
         });
 
-        setHasPermission(response.data.hasPermission);
-        if (!response.data.hasPermission) {
+        setHasPermission(allowed);
+        if (!allowed) {
           setError(`${resource}への${action}権限がありません`);
         }
       } catch (err) {

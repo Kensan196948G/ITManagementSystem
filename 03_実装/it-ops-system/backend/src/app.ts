@@ -3,6 +3,7 @@ import cors from 'cors';
 import authRouter from './routes/auth';
 import monitoringRouter from './routes/monitoring';
 import securityRouter from './routes/security';
+import metricsRouter from './routes/metrics';
 import { errorHandler } from './middleware/errorHandler';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -45,6 +46,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/auth', authRouter);
 app.use('/api/monitoring', monitoringRouter);
 app.use('/api/security', securityRouter);
+app.use('/api/metrics', metricsRouter);
 
 // エラーハンドリング
 app.use(errorHandler);

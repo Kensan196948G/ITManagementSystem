@@ -34,14 +34,9 @@ export interface M365License {
     services: string[];
 }
 export interface SystemMetrics {
-    timestamp: Date;
     cpu: {
         usage: number;
-        temperature: number;
-        cores: Array<{
-            id: number;
-            usage: number;
-        }>;
+        temperature?: number;
     };
     memory: {
         total: number;
@@ -56,18 +51,21 @@ export interface SystemMetrics {
     network: {
         bytesIn: number;
         bytesOut: number;
-        connections: number;
+        packetsIn: number;
+        packetsOut: number;
     };
 }
 export interface Alert {
     id: string;
-    type: 'info' | 'warning' | 'error' | 'critical';
-    message: string;
+    type: 'info' | 'warning' | 'error' | 'critical' | 'security_anomaly';
     source: string;
+    message: string;
+    severity: 'low' | 'medium' | 'high' | 'critical';
     timestamp: Date;
     acknowledged: boolean;
     acknowledgedBy?: string;
     acknowledgedAt?: Date;
+    metadata?: Record<string, any>;
 }
 export interface LogEntry {
     id: string;
@@ -75,7 +73,7 @@ export interface LogEntry {
     level: 'debug' | 'info' | 'warning' | 'error';
     source: string;
     message: string;
-    metadata: Record<string, any>;
+    metadata?: Record<string, any>;
 }
 export interface SystemError extends Error {
     code?: string;
@@ -83,8 +81,55 @@ export interface SystemError extends Error {
 }
 export interface AuthUser {
     id: string;
+    email: string;
     username: string;
     roles: string[];
+}
+export interface PasswordPolicy {
+    minLength: number;
+    requireUppercase: boolean;
+    requireLowercase: boolean;
+    requireNumbers: boolean;
+    requireSpecialChars: boolean;
+    maxAge: number;
+    preventReuse: number;
+}
+export interface SecurityConfig {
+    rateLimit: {
+        windowMs: number;
+        max: number;
+        message: string;
+    };
+    session: {
+        expiresIn: string;
+        maxConcurrentSessions: number;
+    };
+}
+export interface TokenBlacklist {
+    token: string;
+    expiresAt: Date;
+    userId: string;
+    reason: 'logout' | 'password_change' | 'security_breach';
+}
+export interface SecurityAuditEntry {
+    userId: string;
+    action: string;
+    resource: string;
+    timestamp: Date;
+    success: boolean;
+    details?: Record<string, any>;
+}
+export interface AccessAttempt {
+    userId: string;
+    resource: string;
+    timestamp: Date;
+    success: boolean;
+    ipAddress: string;
+    userAgent?: string;
+}
+export interface UserRole {
+    isGlobalAdmin: boolean;
+    permissions: string[];
 }
 export interface ADUserCreateDto {
     sAMAccountName: string;

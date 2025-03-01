@@ -6,7 +6,7 @@ import PeopleIcon from '@mui/icons-material/People';
 import SettingsIcon from '@mui/icons-material/Settings';
 import TimelineIcon from '@mui/icons-material/Timeline';
 import { useAuth } from '../contexts/AuthContext';
-import { api } from '../services/api';
+import { roleApi } from '../services/api';
 
 interface MenuItem {
   label: string;
@@ -33,9 +33,9 @@ export const SideNav = () => {
       try {
         if (!user?.email) return;
 
-        const response = await api.get(`/auth/user-roles/${user.email}`);
-        setUserPermissions(response.data.roles);
-        setIsGlobalAdmin(response.data.isGlobalAdmin);
+        const data = await roleApi.getUserRoles(user.email);
+        setUserPermissions(data.roles);
+        setIsGlobalAdmin(data.isGlobalAdmin);
       } catch (error) {
         console.error('権限情報の取得に失敗しました:', error);
       }

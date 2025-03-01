@@ -8,6 +8,6 @@ declare global {
         }
     }
 }
-export declare const verifyToken: (req: express.Request, res: express.Response, next: express.NextFunction) => void;
+export declare const verifyToken: (req: express.Request, res: express.Response, next: express.NextFunction) => Promise<void>;
 export default router;
 //# sourceMappingURL=auth.d.ts.map

@@ -9,9 +9,18 @@ import {
   Card,
   CardContent,
   CardHeader,
+  LinearProgress,
 } from '@mui/material';
+import {
+  Memory as MemoryIcon,
+  Speed as CpuIcon,
+  Storage as StorageIcon,
+  Warning as AlertIcon,
+  Terminal as LogIcon,
+} from '@mui/icons-material';
 import { SystemMetrics, Alert, LogEntry } from '../../types/api';
-import { metricsApi, alertsApi, logsApi } from '../../services/api';
+import { alertsApi, logsApi } from '../../services/api';
+import { metricsService } from '../../services/metricsService';
 import MetricsChart from './MetricsChart';
 import AlertList from './AlertList';
 import LogViewer from './LogViewer';
@@ -26,7 +35,7 @@ const Dashboard: React.FC = () => {
   const fetchData = async () => {
     try {
       const [metricsData, alertsData, logsData] = await Promise.all([
-        metricsApi.getMetrics(),
+        metricsService.getSystemMetrics(),
         alertsApi.getAlerts(),
         logsApi.getLogs(),
       ]);
@@ -45,116 +54,169 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 30000); // 30秒ごとに更新
+    let cleanupFunction: (() => void) | undefined;
 
-    return () => clearInterval(interval);
+    metricsService.startMetricsPolling((newMetrics) => {
+      setMetrics(newMetrics);
+    }, 5000).then(cleanup => { cleanupFunction = cleanup; });
+    
+    return () => cleanupFunction?.();
   }, []);
 
   const handleAlertAcknowledge = async (alertId: string) => {
     try {
       await alertsApi.acknowledgeAlert(alertId);
-      await fetchData(); // データを再取得
+      await fetchData();
     } catch (err) {
-      console.error('Alert acknowledge error:', err);
       setError('アラートの確認に失敗しました');
+      console.error('Alert acknowledge error:', err);
     }
   };
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
-        <CircularProgress />
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="80vh">
+        <CircularProgress size={60} />
       </Box>
     );
   }
 
   if (error) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
-        <Typography color="error">{error}</Typography>
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="80vh">
+        <Paper elevation={3} sx={{ p: 3, backgroundColor: '#fff3f3' }}>
+          <Typography color="error" variant="h6" align="center">
+            <AlertIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+            {error}
+          </Typography>
+        </Paper>
       </Box>
     );
   }
 
   return (
-    <Container maxWidth="xl">
-      <Box mt={4} mb={4}>
-        <Typography variant="h4" component="h1" gutterBottom>
-          システム監視ダッシュボード
-        </Typography>
-      </Box>
-
-      <Grid container spacing={3}>
-        {/* システムメトリクス */}
-        <Grid item xs={12} md={8}>
-          <Paper elevation={3}>
-            <Box p={3}>
-              <Typography variant="h6" gutterBottom>
-                システムメトリクス
-              </Typography>
-              {metrics && <MetricsChart data={metrics} />}
-            </Box>
-          </Paper>
-        </Grid>
-
-        {/* アラート */}
-        <Grid item xs={12} md={4}>
-          <Paper elevation={3}>
-            <Box p={3}>
-              <Typography variant="h6" gutterBottom>
-                アクティブアラート
-              </Typography>
-              <AlertList alerts={alerts} onAcknowledge={handleAlertAcknowledge} />
-            </Box>
-          </Paper>
-        </Grid>
-
-        {/* リソース使用状況 */}
-        <Grid item xs={12} md={6}>
-          <Paper elevation={3}>
-            <Box p={3}>
-              <Typography variant="h6" gutterBottom>
-                リソース使用状況
-              </Typography>
-              {metrics && (
-                <Grid container spacing={2}>
-                  <Grid item xs={6}>
-                    <Card>
-                      <CardHeader title="CPU使用率" />
-                      <CardContent>
-                        <Typography variant="h4">{`${metrics.cpu.usage.toFixed(1)}%`}</Typography>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                  <Grid item xs={6}>
-                    <Card>
-                      <CardHeader title="メモリ使用率" />
-                      <CardContent>
-                        <Typography variant="h4">
-                          {`${((metrics.memory.used / metrics.memory.total) * 100).toFixed(1)}%`}
-                        </Typography>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                </Grid>
-              )}
-            </Box>
-          </Paper>
-        </Grid>
-
-        {/* システムログ */}
-        <Grid item xs={12} md={6}>
-          <Paper elevation={3}>
-            <Box p={3}>
-              <Typography variant="h6" gutterBottom>
-                システムログ
-              </Typography>
-              <LogViewer logs={logs} />
-            </Box>
-          </Paper>
-        </Grid>
+    <Grid container spacing={3}>
+      {/* システムメトリクス */}
+      <Grid item xs={12} md={8}>
+        <Paper 
+          elevation={3}
+          sx={{
+            p: 3,
+            background: 'linear-gradient(to right bottom, #ffffff, #f8f9fa)',
+          }}
+        >
+          <Box display="flex" alignItems="center" mb={2}>
+            <CpuIcon sx={{ mr: 1, color: 'primary.main' }} />
+            <Typography variant="h6">システムメトリクス</Typography>
+          </Box>
+          {metrics && <MetricsChart data={metrics} />}
+        </Paper>
       </Grid>
-    </Container>
+
+      {/* クイックステータス */}
+      <Grid item xs={12} md={4}>
+        <Paper 
+          elevation={3}
+          sx={{
+            p: 3,
+            background: 'linear-gradient(to right bottom, #ffffff, #f8f9fa)',
+          }}
+        >
+          <Box display="flex" alignItems="center" mb={3}>
+            <StorageIcon sx={{ mr: 1, color: 'secondary.main' }} />
+            <Typography variant="h6">システムステータス</Typography>
+          </Box>
+          {metrics && (
+            <Grid container spacing={2}>
+              <Grid item xs={12}>
+                <Card>
+                  <CardContent>
+                    <Box display="flex" alignItems="center" mb={1}>
+                      <CpuIcon sx={{ mr: 1, color: 'primary.main' }} />
+                      <Typography variant="subtitle1">CPU使用率</Typography>
+                    </Box>
+                    <LinearProgress
+                      variant="determinate"
+                      value={metrics.cpu.usage}
+                      sx={{ 
+                        height: 10, 
+                        borderRadius: 5,
+                        backgroundColor: 'rgba(0, 0, 0, 0.1)',
+                        '& .MuiLinearProgress-bar': {
+                          backgroundColor: metrics.cpu.usage > 80 ? '#f44336' : '#4caf50'
+                        }
+                      }}
+                    />
+                    <Typography variant="h5" sx={{ mt: 1, textAlign: 'right' }}>
+                      {`${metrics.cpu.usage.toFixed(1)}%`}
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid item xs={12}>
+                <Card>
+                  <CardContent>
+                    <Box display="flex" alignItems="center" mb={1}>
+                      <MemoryIcon sx={{ mr: 1, color: 'secondary.main' }} />
+                      <Typography variant="subtitle1">メモリ使用率</Typography>
+                    </Box>
+                    <LinearProgress
+                      variant="determinate"
+                      value={(metrics.memory.used / metrics.memory.total) * 100}
+                      sx={{ 
+                        height: 10, 
+                        borderRadius: 5,
+                        backgroundColor: 'rgba(0, 0, 0, 0.1)',
+                        '& .MuiLinearProgress-bar': {
+                          backgroundColor: (metrics.memory.used / metrics.memory.total) * 100 > 80 ? '#f44336' : '#4caf50'
+                        }
+                      }}
+                    />
+                    <Typography variant="h5" sx={{ mt: 1, textAlign: 'right' }}>
+                      {`${((metrics.memory.used / metrics.memory.total) * 100).toFixed(1)}%`}
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
+          )}
+        </Paper>
+      </Grid>
+
+      {/* アラート */}
+      <Grid item xs={12} md={6}>
+        <Paper 
+          elevation={3}
+          sx={{
+            p: 3,
+            background: 'linear-gradient(to right bottom, #ffffff, #f8f9fa)',
+          }}
+        >
+          <Box display="flex" alignItems="center" mb={2}>
+            <AlertIcon sx={{ mr: 1, color: 'warning.main' }} />
+            <Typography variant="h6">アクティブアラート</Typography>
+          </Box>
+          <AlertList alerts={alerts} onAcknowledge={handleAlertAcknowledge} />
+        </Paper>
+      </Grid>
+
+      {/* システムログ */}
+      <Grid item xs={12} md={6}>
+        <Paper 
+          elevation={3}
+          sx={{
+            p: 3,
+            background: 'linear-gradient(to right bottom, #ffffff, #f8f9fa)',
+          }}
+        >
+          <Box display="flex" alignItems="center" mb={2}>
+            <LogIcon sx={{ mr: 1, color: 'info.main' }} />
+            <Typography variant="h6">システムログ</Typography>
+          </Box>
+          <LogViewer logs={logs} />
+        </Paper>
+      </Grid>
+    </Grid>
   );
 };
 

@@ -9,23 +9,26 @@ export interface SystemMetrics {
     used: number;
     free: number;
   };
-  disk: {
-    total: number;
-    used: number;
-    free: number;
-  };
   network: {
     bytesIn: number;
     bytesOut: number;
     packetsIn: number;
     packetsOut: number;
   };
+  redis: {
+    connectionStatus: number;
+    memoryUsageBytes: number;
+    cacheHitRatio: number;
+    retryAttempts: number;
+  };
 }
+
+export type AlertType = 'critical' | 'error' | 'warning' | 'info';
 
 // アラート型定義
 export interface Alert {
   id: string;
-  type: 'info' | 'warning' | 'error' | 'critical';
+  type: AlertType;
   source: string;
   message: string;
   timestamp: Date;
@@ -34,11 +37,13 @@ export interface Alert {
   acknowledgedAt?: Date;
 }
 
+export type LogLevel = 'error' | 'warning' | 'info' | 'debug';
+
 // ログエントリ型定義
 export interface LogEntry {
   id: string;
   timestamp: Date;
-  level: 'info' | 'warning' | 'error' | 'debug';
+  level: LogLevel;
   source: string;
   message: string;
   metadata: Record<string, any>;
@@ -139,10 +144,10 @@ export interface ADGroup {
 export interface M365License {
   id: string;
   name: string;
-  totalQuantity: number;
-  consumedQuantity: number;
-  skuId: string;
-  services: M365Service[];
+  type: string;
+  assignedCount: number;
+  totalCount: number;
+  status: 'active' | 'inactive';
 }
 
 export interface M365Service {

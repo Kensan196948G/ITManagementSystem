@@ -1,38 +1,37 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  Box,
-  Typography,
-  CircularProgress,
   Alert,
+  CircularProgress,
+  Container,
+  Typography,
   List,
   ListItem,
   ListItemIcon,
   ListItemText,
   Chip,
-  Button,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions
 } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import { useAuth } from '../../contexts/AuthContext';
 
-export const GraphAPIPermissionCheck: React.FC = () => {
-  const { user } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
-  const [permissions, setPermissions] = useState<{
-    currentPermissions: any[];
-    recommendedPermissions: string[];
-  } | null>(null);
-  const [openDialog, setOpenDialog] = useState(false);
+interface Permission {
+  id: string;
+  type: string;
+}
 
-  useEffect(() => {
-    checkAdminStatus();
-  }, []);
+interface PermissionData {
+  recommendedPermissions: string[];
+  currentPermissions: {
+    resourceAccess: Permission[];
+  }[];
+}
+
+export const GraphAPIPermissionCheck: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useAuth();
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [permissions, setPermissions] = useState<PermissionData | null>(null);
 
   const checkAdminStatus = async () => {
     try {
@@ -44,7 +43,7 @@ export const GraphAPIPermissionCheck: React.FC = () => {
       const data = await response.json();
       
       if (data.status === 'success') {
-        setIsGlobalAdmin(data.isGlobalAdmin);
+        setIsAdmin(data.isGlobalAdmin);
         if (data.isGlobalAdmin) {
           await checkGraphPermissions();
         }
@@ -57,6 +56,10 @@ export const GraphAPIPermissionCheck: React.FC = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    checkAdminStatus();
+  }, []);
 
   const checkGraphPermissions = async () => {
     try {
@@ -79,9 +82,9 @@ export const GraphAPIPermissionCheck: React.FC = () => {
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" my={4}>
+      <Container sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
         <CircularProgress />
-      </Box>
+      </Container>
     );
   }
 
@@ -93,7 +96,7 @@ export const GraphAPIPermissionCheck: React.FC = () => {
     );
   }
 
-  if (!isGlobalAdmin) {
+  if (!isAdmin) {
     return (
       <Alert severity="warning" sx={{ my: 2 }}>
         この機能を利用するにはグローバル管理者権限が必要です。
@@ -102,26 +105,26 @@ export const GraphAPIPermissionCheck: React.FC = () => {
   }
 
   const missingPermissions = permissions?.recommendedPermissions.filter(
-    perm => !permissions.currentPermissions.some(
-      (current: any) => current.resourceAccess.some(
-        (access: any) => access.id === perm
+    (perm: string) => !permissions.currentPermissions.some(
+      (current) => current.resourceAccess.some(
+        (access) => access.id === perm
       )
     )
   ) || [];
 
   return (
-    <Box sx={{ maxWidth: 800, mx: 'auto', p: 3 }}>
+    <Container sx={{ maxWidth: 800, mx: 'auto', p: 3 }}>
       <Typography variant="h5" gutterBottom>
         Microsoft Graph API パーミッション確認
       </Typography>
 
       <List>
-        {permissions?.recommendedPermissions.map((permission) => (
+        {permissions?.recommendedPermissions.map((permission: string) => (
           <ListItem key={permission}>
             <ListItemIcon>
               {permissions.currentPermissions.some(
-                (current: any) => current.resourceAccess.some(
-                  (access: any) => access.id === permission
+                (current) => current.resourceAccess.some(
+                  (access) => access.id === permission
                 )
               ) ? (
                 <CheckCircleIcon color="success" />
@@ -135,8 +138,8 @@ export const GraphAPIPermissionCheck: React.FC = () => {
                 <Chip
                   label={
                     permissions.currentPermissions.some(
-                      (current: any) => current.resourceAccess.some(
-                        (access: any) => access.id === permission
+                      (current) => current.resourceAccess.some(
+                        (access) => access.id === permission
                       )
                     )
                       ? "設定済み"
@@ -144,8 +147,8 @@ export const GraphAPIPermissionCheck: React.FC = () => {
                   }
                   color={
                     permissions.currentPermissions.some(
-                      (current: any) => current.resourceAccess.some(
-                        (access: any) => access.id === permission
+                      (current) => current.resourceAccess.some(
+                        (access) => access.id === permission
                       )
                     )
                       ? "success"
@@ -164,6 +167,8 @@ export const GraphAPIPermissionCheck: React.FC = () => {
           {missingPermissions.length}個の推奨パーミッションが未設定です
         </Alert>
       )}
-    </Box>
+
+      {children}
+    </Container>
   );
 };

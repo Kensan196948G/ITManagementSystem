@@ -1,150 +1,141 @@
-import axios, { AxiosInstance, AxiosResponse, AxiosError, InternalAxiosRequestConfig } from 'axios';
-import {
-  SystemMetrics,
-  Alert,
-  LogEntry,
-  ApiResponse,
-  LoginFormData,
-  AuthState,
-} from '../types/api';
+import axios from 'axios';
+import { ApiResponse, AuthState, User, LoginFormData, Alert, LogEntry } from '../types/api';
 
-// APIクライアントの作成
-const createApiClient = (): AxiosInstance => {
-  const baseURL = window.location.hostname === 'localhost' 
-    ? 'http://localhost:3000/api'
-    : '/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000/api';
 
-  const client = axios.create({
-    baseURL,
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
+const axiosInstance = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  withCredentials: true,
+});
 
-  // リクエストインターセプター
-  client.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+// リクエストインターセプター
+axiosInstance.interceptors.request.use(
+  (config) => {
     const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
-  });
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
 
-  // レスポンスインターセプター
-  client.interceptors.response.use(
-    (response: AxiosResponse) => response,
-    (error: AxiosError) => {
-      if (error.response?.status === 401) {
-        localStorage.removeItem('token');
-        window.location.href = '/login';
-      }
-      return Promise.reject(error);
+// レスポンスインターセプター
+axiosInstance.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token');
+      window.location.href = '/login';
     }
-  );
+    return Promise.reject(error);
+  }
+);
 
-  return client;
-};
-
-const apiClient = createApiClient();
-
-// 認証関連の API
 export const authApi = {
-  login: async (credentials: LoginFormData): Promise<ApiResponse<AuthState>> => {
-    const response: AxiosResponse<ApiResponse<AuthState>> = await apiClient.post(
+  async login(credentials: LoginFormData): Promise<ApiResponse<AuthState>> {
+    const response = await axiosInstance.post<ApiResponse<AuthState>>(
       '/auth/login',
       credentials
     );
-    const { token } = response.data.data!;
-    localStorage.setItem('token', token);
+    if (response.data.data?.token) {
+      localStorage.setItem('token', response.data.data.token);
+    }
     return response.data;
   },
 
-  logout: async (): Promise<void> => {
-    await apiClient.post('/auth/logout');
+  async logout(): Promise<void> {
+    await axiosInstance.post('/auth/logout');
     localStorage.removeItem('token');
   },
 
-  getCurrentUser: async (): Promise<ApiResponse<AuthState>> => {
-    const response: AxiosResponse<ApiResponse<AuthState>> = await apiClient.get('/auth/me');
+  async getCurrentUser(): Promise<User | null> {
+    try {
+      const response = await axiosInstance.get<ApiResponse<User>>('/auth/me');
+      return response.data.data || null;
+    } catch (error) {
+      return null;
+    }
+  },
+
+  checkPermission: async (params: { userEmail: string; check: { resource: string; action: string } }): Promise<boolean> => {
+    const response = await fetch(`${API_BASE_URL}/auth/check-permission`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(params),
+    });
+    const data = await response.json();
+    return data.allowed;
+  }
+};
+
+export const metricsApi = {
+  async getSystemMetrics() {
+    const response = await axiosInstance.get('/metrics/system');
     return response.data;
   },
 };
 
-// システムメトリクス関連の API
-export const metricsApi = {
-  getMetrics: async (): Promise<SystemMetrics> => {
-    const response: AxiosResponse<ApiResponse<SystemMetrics>> = await apiClient.get(
-      '/monitoring/metrics'
-    );
-    return response.data.data!;
-  },
-};
-
-// アラート関連の API
 export const alertsApi = {
   getAlerts: async (): Promise<Alert[]> => {
-    const response: AxiosResponse<ApiResponse<Alert[]>> = await apiClient.get(
-      '/monitoring/alerts'
-    );
-    return response.data.data!;
+    const response = await fetch(`${API_BASE_URL}/security/dashboard`);
+    const data = await response.json();
+    if (!data || !data.activeAlerts) {
+      throw new Error('Failed to fetch alerts');
+    }
+    return data.activeAlerts;
   },
 
-  acknowledgeAlert: async (alertId: string): Promise<void> => {
-    await apiClient.post(`/monitoring/alerts/${alertId}/acknowledge`);
+  acknowledgeAlert: async (alertId: string): Promise<ApiResponse> => {
+    const response = await fetch(`${API_BASE_URL}/security/incidents/${alertId}/respond`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ action: 'acknowledge' }),
+    });
+    return response.json();
   },
 };
 
-// ログ関連の API
 export const logsApi = {
-  getLogs: async (params?: {
-    startDate?: Date;
-    endDate?: Date;
-    level?: string;
-    source?: string;
-  }): Promise<LogEntry[]> => {
-    const response: AxiosResponse<ApiResponse<LogEntry[]>> = await apiClient.get(
-      '/monitoring/logs',
-      { params }
-    );
-    return response.data.data!;
-  },
-
-  addLog: async (logEntry: Omit<LogEntry, 'id' | 'timestamp'>): Promise<LogEntry> => {
-    const response: AxiosResponse<ApiResponse<LogEntry>> = await apiClient.post(
-      '/monitoring/logs',
-      logEntry
-    );
-    return response.data.data!;
+  getLogs: async (): Promise<LogEntry[]> => {
+    const response = await fetch(`${API_BASE_URL}/monitoring/logs`);
+    const data: ApiResponse<LogEntry[]> = await response.json();
+    if (data.status === 'error' || !data.data) {
+      throw new Error(data.message || 'Failed to fetch logs');
+    }
+    return data.data;
   },
 };
 
-// エラーハンドリング
-export class ApiError extends Error {
-  constructor(
-    public status: number,
-    public message: string,
-    public errors?: string[]
-  ) {
-    super(message);
-    this.name = 'ApiError';
-  }
-}
+export const roleApi = {
+  async getRoleMappings() {
+    const response = await axiosInstance.get('/auth/role-mappings');
+    return response.data;
+  },
 
-// エラーレスポンスの変換
-export const handleApiError = (error: AxiosError): ApiError => {
-  if (error.response) {
-    return new ApiError(
-      error.response.status,
-      (error.response.data as any).message || 'APIエラーが発生しました',
-      (error.response.data as any).errors
-    );
+  async getUserRoles(email: string) {
+    const response = await axiosInstance.get(`/auth/user-roles/${email}`);
+    return response.data;
   }
-  return new ApiError(500, 'ネットワークエラーが発生しました');
 };
 
-export default {
-  auth: authApi,
-  metrics: metricsApi,
-  alerts: alertsApi,
-  logs: logsApi,
+export const m365Api = {
+  async getLicenses() {
+    const response = await axiosInstance.get('/m365/licenses');
+    return response.data;
+  },
+
+  async getUsers() {
+    const response = await axiosInstance.get('/m365/users');
+    return response.data;
+  }
 };

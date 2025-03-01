@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Alert, CircularProgress, Container, Typography } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
-import { api } from '../services/api';
+import { authApi } from '../services/api';
 
 interface PermissionGuardProps {
   requiredPermission: string;
@@ -26,13 +26,13 @@ export const PermissionGuard: React.FC<PermissionGuardProps> = ({
           return;
         }
 
-        const response = await api.post('/auth/validate-access', {
+        const response = await authApi.checkPermission({
           userEmail: user.email,
-          permission: requiredPermission
+          check: { resource: requiredPermission, action: 'read' }
         });
 
-        setHasPermission(response.data.hasAccess);
-        if (!response.data.hasAccess) {
+        setHasPermission(response);
+        if (!response) {
           setError('このページへのアクセス権限がありません');
         }
       } catch (err) {

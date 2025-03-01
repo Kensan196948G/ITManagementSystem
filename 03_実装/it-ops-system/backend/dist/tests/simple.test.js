@@ -1,4 +1,5 @@
 "use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
 describe('Simple Test Suite', () => {
     it('should pass a basic test', () => {
         expect(1 + 1).toBe(2);

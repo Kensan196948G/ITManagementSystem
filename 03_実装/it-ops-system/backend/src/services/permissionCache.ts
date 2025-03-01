@@ -1,43 +1,65 @@
-import { PermissionService } from './permissionService';
-import { RedisService } from './redisService';
-import { Prometheus } from '../metrics/prometheus';
+import { Database } from 'sqlite3';
 import LoggingService from './loggingService';
 
 const logger = LoggingService.getInstance();
-const redis = RedisService.getInstance().getClient();
+const metrics = {
+  cacheHits: {
+    inc: (tags: { cache: string; result: string }) => {
+      logger.logMetric({
+        metric: 'cache_hits',
+        value: 1,
+        unit: 'count',
+        tags
+      });
+    }
+  }
+};
 
 interface PermissionCacheConfig {
-  ttl: number;  // キャッシュの有効期間（秒）
-  maxSize: number;  // 最大キャッシュサイズ
+  maxSize: number;
+  defaultTTL: number;
 }
 
 export class PermissionCache {
   private static instance: PermissionCache;
-  private metrics = Prometheus;
-  private readonly config: PermissionCacheConfig = {
-    ttl: 300,  // 5分
-    maxSize: 10000
+  private db: Database;
+  private config: PermissionCacheConfig = {
+    maxSize: 10000,
+    defaultTTL: 3600 // 1 hour
   };
 
   private constructor() {
-    this.initializeMetrics();
+    this.db = new Database('database.sqlite');
+    this.initializeDatabase().catch(error => {
+      logger.logError(error as Error, {
+        context: 'PermissionCache',
+        message: 'Failed to initialize cache database'
+      });
+    });
+    this.startCleanupInterval();
   }
 
-  private initializeMetrics(): void {
-    // キャッシュのパフォーマンスメトリクス
-    this.metrics.register.gauge({
-      name: 'permission_cache_size',
-      help: '権限キャッシュのサイズ'
-    });
-
-    this.metrics.register.counter({
-      name: 'permission_cache_hits_total',
-      help: 'キャッシュヒットの総数'
-    });
-
-    this.metrics.register.counter({
-      name: 'permission_cache_misses_total',
-      help: 'キャッシュミスの総数'
+  private async initializeDatabase(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS permission_cache (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL,
+          expires_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_permission_cache_expiry 
+        ON permission_cache(expires_at);
+      `, (err) => {
+        if (err) {
+          logger.logError(err, {
+            context: 'PermissionCache',
+            message: 'Error initializing cache database'
+          });
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
     });
   }
 
@@ -48,124 +70,175 @@ export class PermissionCache {
     return PermissionCache.instance;
   }
 
-  private generateCacheKey(userId: string, resource: string, action: string): string {
-    return `perm:${userId}:${resource}:${action}`;
+  private startCleanupInterval(): void {
+    setInterval(async () => {
+      try {
+        await this.cleanupExpiredEntries();
+      } catch (error) {
+        logger.logError(error as Error, {
+          context: 'PermissionCache',
+          message: 'Failed to clean up expired entries'
+        });
+      }
+    }, 60000); // Clean up every 1 minute
   }
 
-  public async getPermission(userId: string, resource: string, action: string): Promise<boolean | null> {
-    const startTime = process.hrtime();
-    const cacheKey = this.generateCacheKey(userId, resource, action);
-
-    try {
-      const cachedValue = await redis.get(cacheKey);
-      
-      // メトリクスの更新
-      if (cachedValue !== null) {
-        this.metrics.metrics.caching.inc({ cache_type: 'permission_hit' });
-        this.recordAccessLatency(startTime, 'cache_hit');
-        return cachedValue === 'true';
-      }
-
-      this.metrics.metrics.caching.inc({ cache_type: 'permission_miss' });
-      return null;
-    } catch (error) {
-      logger.logError(error as Error, {
-        context: 'PermissionCache',
-        message: 'キャッシュアクセスエラー',
-        userId,
-        resource,
-        action
-      });
-      return null;
-    }
-  }
-
-  public async setPermission(
-    userId: string,
-    resource: string,
-    action: string,
-    hasPermission: boolean
-  ): Promise<void> {
-    const cacheKey = this.generateCacheKey(userId, resource, action);
-
-    try {
-      await redis.set(cacheKey, hasPermission.toString(), 'EX', this.config.ttl);
-      
-      // キャッシュサイズの監視
-      const currentSize = await this.getCurrentCacheSize();
-      this.metrics.metrics.caching.set({ cache_type: 'size' }, currentSize);
-
-      // キャッシュが大きすぎる場合は古いエントリーを削除
-      if (currentSize > this.config.maxSize) {
-        await this.evictOldEntries();
-      }
-    } catch (error) {
-      logger.logError(error as Error, {
-        context: 'PermissionCache',
-        message: 'キャッシュ設定エラー',
-        userId,
-        resource,
-        action
-      });
-    }
-  }
-
-  public async invalidatePermission(userId: string, resource?: string, action?: string): Promise<void> {
-    try {
-      let pattern = `perm:${userId}`;
-      if (resource) pattern += `:${resource}`;
-      if (action) pattern += `:${action}`;
-      pattern += '*';
-
-      const keys = await redis.keys(pattern);
-      if (keys.length > 0) {
-        await redis.del(...keys);
-      }
-
-      // メトリクスの更新
-      this.metrics.metrics.caching.set(
-        { cache_type: 'invalidations' },
-        keys.length
+  private async cleanupExpiredEntries(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const now = Date.now();
+      this.db.run(
+        'DELETE FROM permission_cache WHERE expires_at < ?',
+        [now],
+        (err) => {
+          if (err) {
+            logger.logError(err, {
+              context: 'PermissionCache',
+              message: 'Error deleting expired entries'
+            });
+            reject(err);
+          } else {
+            resolve();
+          }
+        }
       );
-    } catch (error) {
-      logger.logError(error as Error, {
-        context: 'PermissionCache',
-        message: 'キャッシュ無効化エラー',
-        userId,
-        resource,
-        action
-      });
-    }
+    });
   }
 
-  private async getCurrentCacheSize(): Promise<number> {
-    const keys = await redis.keys('perm:*');
-    return keys.length;
+  public async get(key: string): Promise<string | null> {
+    return new Promise<string | null>((resolve) => {
+      const now = Date.now();
+      this.db.get(
+        'SELECT value FROM permission_cache WHERE key = ? AND expires_at > ?',
+        [key, now],
+        (err, row: { value: string } | undefined) => {
+          if (err) {
+            logger.logError(err, {
+              context: 'PermissionCache',
+              message: 'Error fetching from cache',
+              key
+            });
+            resolve(null);
+            return;
+          }
+
+          metrics.cacheHits.inc({
+            cache: 'permission',
+            result: row ? 'hit' : 'miss'
+          });
+
+          resolve(row?.value || null);
+        }
+      );
+    });
+  }
+
+  public async set(key: string, value: string, ttl: number = this.config.defaultTTL): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const expiresAt = Date.now() + ttl * 1000;
+
+      this.db.get(
+        'SELECT COUNT(*) as count FROM permission_cache',
+        async (err, result: { count: number }) => {
+          if (err) {
+            logger.logError(err, {
+              context: 'PermissionCache',
+              message: 'Error counting cache entries',
+              key
+            });
+            reject(err);
+            return;
+          }
+
+          try {
+            if ((result?.count ?? 0) >= this.config.maxSize) {
+              await this.evictOldEntries();
+            }
+
+            this.db.run(
+              `INSERT OR REPLACE INTO permission_cache (key, value, expires_at)
+               VALUES (?, ?, ?)`,
+              [key, value, expiresAt],
+              (err) => {
+                if (err) {
+                  logger.logError(err, {
+                    context: 'PermissionCache',
+                    message: 'Error setting cache',
+                    key
+                  });
+                  reject(err);
+                } else {
+                  resolve();
+                }
+              }
+            );
+          } catch (error) {
+            reject(error);
+          }
+        }
+      );
+    });
   }
 
   private async evictOldEntries(): Promise<void> {
-    const keys = await redis.keys('perm:*');
-    const ttls = await Promise.all(keys.map(key => redis.ttl(key)));
-    
-    // TTLが最も短いエントリーを削除
-    const entriesToEvict = keys
-      .map((key, index) => ({ key, ttl: ttls[index] }))
-      .sort((a, b) => a.ttl - b.ttl)
-      .slice(0, Math.floor(this.config.maxSize * 0.1)) // 10%のエントリーを削除
-      .map(entry => entry.key);
-
-    if (entriesToEvict.length > 0) {
-      await redis.del(...entriesToEvict);
-    }
+    return new Promise<void>((resolve, reject) => {
+      const deleteCount = Math.floor(this.config.maxSize * 0.1);
+      this.db.run(
+        `DELETE FROM permission_cache 
+         WHERE key IN (
+           SELECT key FROM permission_cache 
+           ORDER BY expires_at ASC 
+           LIMIT ?
+         )`,
+        [deleteCount],
+        (err) => {
+          if (err) {
+            logger.logError(err, {
+              context: 'PermissionCache',
+              message: 'Error evicting old entries'
+            });
+            reject(err);
+          } else {
+            resolve();
+          }
+        }
+      );
+    });
   }
 
-  private recordAccessLatency(startTime: [number, number], type: 'cache_hit' | 'cache_miss'): void {
-    const [seconds, nanoseconds] = process.hrtime(startTime);
-    const duration = seconds + nanoseconds / 1e9;
+  public async invalidate(key: string): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.db.run(
+        'DELETE FROM permission_cache WHERE key = ?',
+        [key],
+        (err) => {
+          if (err) {
+            logger.logError(err, {
+              context: 'PermissionCache',
+              message: 'Error invalidating cache key',
+              key
+            });
+            reject(err);
+          } else {
+            resolve();
+          }
+        }
+      );
+    });
+  }
 
-    this.metrics.metrics.permissionCheck.observe({
-      type: 'cache_access',
-      result: type
-    }, duration);
+  public async clear(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.db.run('DELETE FROM permission_cache', (err) => {
+        if (err) {
+          logger.logError(err, {
+            context: 'PermissionCache',
+            message: 'Error clearing cache'
+          });
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
   }
 }

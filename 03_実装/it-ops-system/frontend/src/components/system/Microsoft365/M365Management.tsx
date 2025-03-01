@@ -8,8 +8,8 @@ import {
   Alert,
   Container,
 } from '@mui/material';
-import M365LicenseManagement from './M365LicenseManagement';
-import M365UserManagement from './M365UserManagement';
+import { M365LicenseManagement } from './M365LicenseManagement';
+import { M365UserManagement } from './M365UserManagement';
 
 interface TabPanelProps {
   children?: React.ReactNode;

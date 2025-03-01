@@ -13,7 +13,7 @@ import {
   Alert
 } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
-import { api } from '../services/api';
+import { roleApi } from '../services/api';
 
 interface RoleMapping {
   roleName: string;
@@ -30,8 +30,8 @@ export const RoleManagement: React.FC = () => {
     const fetchRoleMappings = async () => {
       try {
         if (!user?.email) return;
-        const response = await api.get('/auth/role-mappings');
-        setRoleMappings(response.data);
+        const data = await roleApi.getRoleMappings();
+        setRoleMappings(data);
       } catch (err) {
         setError('ロール情報の取得に失敗しました');
       }

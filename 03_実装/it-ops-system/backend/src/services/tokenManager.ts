@@ -1,7 +1,11 @@
+// @ts-ignore
 import { TokenBlacklist } from '../types/system';
-import { Redis } from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
-import { TokenRotationConfig } from '../types/auth';
+// @ts-ignore
+import { TokenRotationConfig, TokenVerificationResult } from '../types/auth';
+import { Database } from 'sqlite3';
+import LoggingService from './loggingService';
+import { SQLiteService } from './sqliteService';
 
 interface TokenMetadata {
   userId: string;
@@ -14,17 +18,9 @@ interface TokenMetadata {
   };
 }
 
-// Redisクライアントの初期化
-const redis = new Redis({
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379'),
-});
-
 export class TokenManager {
-  private static redis: Redis;
-  private static readonly TOKEN_PREFIX = 'token:blacklist:';
-  private static readonly USER_SESSION_PREFIX = 'user:sessions:';
-  private static readonly PREFIX = 'token:';
+  private static db: Database;
+  private static logger = LoggingService.getInstance();
   private static readonly ROTATION_CONFIG: TokenRotationConfig = {
     maxAge: 24 * 60 * 60 * 1000, // 24時間
     rotationWindow: 60 * 60 * 1000, // 1時間
@@ -32,52 +28,159 @@ export class TokenManager {
   };
 
   static async initialize() {
-    this.redis = new Redis({
-      host: process.env.REDIS_HOST,
-      port: parseInt(process.env.REDIS_PORT || '6379'),
-      password: process.env.REDIS_PASSWORD
+    try {
+      // SQLiteServiceからデータベース接続を取得
+      this.db = SQLiteService.getInstance().getDb();
+      
+      // テーブル作成
+      const createTablesSQL = `
+        CREATE TABLE IF NOT EXISTS token_blacklist (
+          token TEXT PRIMARY KEY,
+          data TEXT NOT NULL,
+          expires_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS user_sessions (
+          user_id TEXT PRIMARY KEY,
+          session_count INTEGER DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS tokens (
+          token TEXT PRIMARY KEY,
+          metadata TEXT NOT NULL,
+          expires_at INTEGER NOT NULL
+        );
+      `;
+      
+      // Promise経由でexecを実行
+      await new Promise<void>((resolve, reject) => {
+        this.db.exec(createTablesSQL, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+    } catch (error) {
+      this.logger.logError(error as Error, {
+        context: 'TokenManager',
+        message: 'データベース初期化エラー'
+      });
+      throw error;
+    }
+  }
+
+  static async blacklistToken(tokenData: TokenBlacklist): Promise<void> {
+    return new Promise((resolve) => {
+      const expiresAt = Math.ceil(tokenData.expiresAt.getTime());
+      this.db.run(
+        'INSERT INTO token_blacklist (token, data, expires_at) VALUES (?, ?, ?)',
+        [tokenData.token, JSON.stringify(tokenData), expiresAt],
+        (err) => {
+          if (err) {
+            this.logger.logError(err, {
+              context: 'TokenManager',
+              message: 'トークンのブラックリスト追加に失敗'
+            });
+            resolve();
+          } else {
+            resolve();
+          }
+        }
+      );
     });
   }
 
-  // トークンをブラックリストに追加
-  static async blacklistToken(tokenData: TokenBlacklist): Promise<void> {
-    const key = `${this.TOKEN_PREFIX}${tokenData.token}`;
-    await redis.setex(
-      key,
-      Math.ceil((tokenData.expiresAt.getTime() - Date.now()) / 1000),
-      JSON.stringify(tokenData)
-    );
-  }
-
-  // トークンがブラックリストにあるか確認
   static async isTokenBlacklisted(token: string): Promise<boolean> {
-    const key = `${this.TOKEN_PREFIX}${token}`;
-    return await redis.exists(key) === 1;
+    try {
+      const now = Date.now();
+      return new Promise((resolve) => {
+        this.db.get(
+          'SELECT COUNT(*) as count FROM token_blacklist WHERE token = ? AND expires_at > ?',
+          [token, now],
+          (err, row: { count: number }) => {
+            if (err) {
+              this.logger.logError(err, {
+                context: 'TokenManager',
+                message: 'トークンのブラックリスト確認に失敗'
+              });
+              resolve(false);
+            } else {
+              resolve(row.count > 0);
+            }
+          }
+        );
+      });
+    } catch (error) {
+      this.logger.logError(error as Error, {
+        context: 'TokenManager',
+        message: 'トークンのブラックリスト確認に失敗'
+      });
+      return false;
+    }
   }
 
-  // ユーザーのアクティブセッション数を取得
   static async getUserActiveSessions(userId: string): Promise<number> {
-    const key = `${this.USER_SESSION_PREFIX}${userId}`;
-    const count = await redis.get(key);
-    return count ? parseInt(count) : 0;
+    return new Promise((resolve) => {
+      this.db.get(
+        'SELECT session_count FROM user_sessions WHERE user_id = ?',
+        [userId],
+        (err, row: { session_count: number } | undefined) => {
+          if (err) {
+            this.logger.logError(err, {
+              context: 'TokenManager',
+              message: 'アクティブセッション数の取得に失敗'
+            });
+            resolve(0);
+          } else {
+            resolve(row?.session_count ?? 0);
+          }
+        }
+      );
+    });
   }
 
-  // ユーザーのセッションを追加
   static async addUserSession(userId: string): Promise<void> {
-    const key = `${this.USER_SESSION_PREFIX}${userId}`;
-    await redis.incr(key);
+    return new Promise((resolve) => {
+      this.db.run(
+        `INSERT INTO user_sessions (user_id, session_count)
+         VALUES (?, 1)
+         ON CONFLICT(user_id) DO UPDATE SET session_count = session_count + 1`,
+        [userId],
+        (err) => {
+          if (err) {
+            this.logger.logError(err, {
+              context: 'TokenManager',
+              message: 'セッション追加に失敗'
+            });
+            resolve();
+          } else {
+            resolve();
+          }
+        }
+      );
+    });
   }
 
-  // ユーザーのセッションを削除
   static async removeUserSession(userId: string): Promise<void> {
-    const key = `${this.USER_SESSION_PREFIX}${userId}`;
-    await redis.decr(key);
-  }
-
-  // 指定されたユーザーの全セッションを無効化
-  static async invalidateAllUserSessions(userId: string): Promise<void> {
-    const key = `${this.USER_SESSION_PREFIX}${userId}`;
-    await redis.del(key);
+    return new Promise((resolve) => {
+      this.db.run(
+        `UPDATE user_sessions 
+         SET session_count = CASE 
+           WHEN session_count > 0 THEN session_count - 1 
+           ELSE 0 
+         END
+         WHERE user_id = ?`,
+        [userId],
+        (err) => {
+          if (err) {
+            this.logger.logError(err, {
+              context: 'TokenManager',
+              message: 'セッション削除に失敗'
+            });
+            resolve(); // エラーの場合でもresolve
+          } else {
+            resolve();
+          }
+        }
+      );
+    });
   }
 
   static async createToken(userId: string, clientInfo: { ip: string; userAgent: string }): Promise<string> {
@@ -90,96 +193,86 @@ export class TokenManager {
       clientInfo
     };
 
-    await this.redis.set(
-      `${this.PREFIX}${token}`,
-      JSON.stringify(metadata),
-      'EX',
-      this.ROTATION_CONFIG.maxAge / 1000
-    );
+    try {
+      this.db.prepare(
+        'INSERT INTO tokens (token, metadata, expires_at) VALUES (?, ?, ?)'
+      ).run(
+        token,
+        JSON.stringify(metadata),
+        Date.now() + this.ROTATION_CONFIG.maxAge
+      );
 
-    await this.trackTokenUsage(token, metadata);
-    return token;
-  }
-
-  static async rotateToken(oldToken: string): Promise<string | null> {
-    const metadata = await this.getTokenMetadata(oldToken);
-    if (!metadata) return null;
-
-    if (!this.canRotateToken(metadata)) {
-      return null;
+      await this.addUserSession(userId);
+      return token;
+    } catch (error) {
+      this.logger.logError(error as Error, {
+        context: 'TokenManager',
+        message: 'トークン作成に失敗'
+      });
+      throw error;
     }
-
-    const newToken = uuidv4();
-    const updatedMetadata: TokenMetadata = {
-      ...metadata,
-      rotationCount: metadata.rotationCount + 1,
-      lastRotation: Date.now()
-    };
-
-    // トランザクションでトークンの更新を行う
-    const multi = this.redis.multi();
-    multi.set(
-      `${this.PREFIX}${newToken}`,
-      JSON.stringify(updatedMetadata),
-      'EX',
-      this.ROTATION_CONFIG.maxAge / 1000
-    );
-    multi.del(`${this.PREFIX}${oldToken}`);
-
-    await multi.exec();
-    await this.trackTokenRotation(oldToken, newToken, updatedMetadata);
-    return newToken;
   }
 
-  private static async trackTokenUsage(token: string, metadata: TokenMetadata) {
-    const now = new Date().toISOString();
-    await this.redis.xadd(
-      'token:audit:usage',
-      '*',
-      'token', token,
-      'userId', metadata.userId,
-      'ip', metadata.clientInfo.ip,
-      'userAgent', metadata.clientInfo.userAgent,
-      'timestamp', now,
-      'action', 'created'
-    );
+  static async invalidateAllUserSessions(userId: string): Promise<void> {
+    return new Promise((resolve) => {
+      this.db.run(
+        'DELETE FROM user_sessions WHERE user_id = ?',
+        [userId],
+        (err) => {
+          if (err) {
+            this.logger.logError(err, {
+              context: 'TokenManager',
+              message: 'セッション無効化に失敗'
+            });
+            resolve();
+          } else {
+            resolve();
+          }
+        }
+      );
+    });
   }
 
-  private static async trackTokenRotation(oldToken: string, newToken: string, metadata: TokenMetadata) {
-    const now = new Date().toISOString();
-    await this.redis.xadd(
-      'token:audit:rotations',
-      '*',
-      'oldToken', oldToken,
-      'newToken', newToken,
-      'userId', metadata.userId,
-      'rotationCount', metadata.rotationCount.toString(),
-      'timestamp', now
-    );
-  }
+  static async verifyToken(token: string): Promise<TokenVerificationResult> {
+    try {
+      const isBlacklisted = await this.isTokenBlacklisted(token);
+      if (isBlacklisted) {
+        return { valid: false, error: 'Token is blacklisted' };
+      }
 
-  private static canRotateToken(metadata: TokenMetadata): boolean {
-    const now = Date.now();
-    const age = now - metadata.issuedAt;
-    const timeSinceLastRotation = now - metadata.lastRotation;
+      return new Promise((resolve) => {
+        this.db.get(
+          'SELECT metadata FROM tokens WHERE token = ? AND expires_at > ?',
+          [token, Date.now()],
+          (err, row: { metadata: string } | undefined) => {
+            if (err || !row) {
+              resolve({
+                valid: false,
+                error: 'Token not found or expired'
+              });
+              return;
+            }
 
-    return (
-      age < this.ROTATION_CONFIG.maxAge &&
-      timeSinceLastRotation >= this.ROTATION_CONFIG.rotationWindow &&
-      metadata.rotationCount < this.ROTATION_CONFIG.maxRotations
-    );
-  }
-
-  static async getTokenMetadata(token: string): Promise<TokenMetadata | null> {
-    const data = await this.redis.get(`${this.PREFIX}${token}`);
-    return data ? JSON.parse(data) : null;
-  }
-
-  static async invalidateToken(token: string): Promise<void> {
-    await this.redis.del(`${this.PREFIX}${token}`);
-  }
-
-  static async isTokenValid(token: string): Promise<boolean> {
-    return !!(await this.getTokenMetadata(token));
+            try {
+              const metadata: TokenMetadata = JSON.parse(row.metadata);
+              resolve({
+                valid: true,
+                userId: metadata.userId
+              });
+            } catch {
+              resolve({
+                valid: false,
+                error: 'Invalid token metadata'
+              });
+            }
+          }
+        );
+      });
+    } catch (error) {
+      return {
+        valid: false,
+        error: 'Token verification failed'
+      };
+    }
   }
 }

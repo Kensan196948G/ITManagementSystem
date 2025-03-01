@@ -1,81 +1,72 @@
-import client from 'prom-client';
+import { Registry, Gauge, Counter } from 'prom-client';
 
-// メトリクスの初期設定
-const register = new client.Registry();
-client.collectDefaultMetrics({
-  register,
-  prefix: 'it_ops_'
-});
+class PrometheusMetrics {
+  private static instance: PrometheusMetrics;
+  public register: Registry;
+  public metrics: {
+    accessAttempts: Counter<string>;
+    permissionChanges: Counter<string>;
+    errorRate: Gauge<string>;
+    securityAlertsActive: Gauge<string>;
+    securityAlertsTotal: Counter<string>;
+    cacheHits: Counter<string>;
+  };
 
-// 権限チェックのメトリクス
-const permissionCheckHistogram = new client.Histogram({
-  name: 'permission_check_duration_seconds',
-  help: '権限チェックの処理時間',
-  labelNames: ['resource', 'action', 'result'],
-  buckets: [0.1, 0.3, 0.5, 0.7, 1, 2, 5]
-});
+  private constructor() {
+    this.register = new Registry();
+    
+    // メトリクスの初期化
+    this.metrics = {
+      accessAttempts: new Counter({
+        name: 'access_attempts_total',
+        help: 'Total number of access attempts',
+        labelNames: ['resource', 'status'],
+        registers: [this.register]
+      }),
 
-// トークン操作のメトリクス
-const tokenOperationsCounter = new client.Counter({
-  name: 'token_operations_total',
-  help: 'トークン操作の総数',
-  labelNames: ['operation', 'status']
-});
+      permissionChanges: new Counter({
+        name: 'permission_changes_total',
+        help: 'Total number of permission changes',
+        labelNames: ['type', 'severity'],
+        registers: [this.register]
+      }),
 
-// アクセス試行のメトリクス
-const accessAttemptsCounter = new client.Counter({
-  name: 'access_attempts_total',
-  help: 'アクセス試行の総数',
-  labelNames: ['resource', 'action', 'status']
-});
+      errorRate: new Gauge({
+        name: 'error_rate',
+        help: 'Current error rate',
+        labelNames: ['type', 'severity'],
+        registers: [this.register]
+      }),
 
-// キャッシュヒット率
-const cachingGauge = new client.Gauge({
-  name: 'permission_cache_hit_ratio',
-  help: '権限キャッシュのヒット率',
-  labelNames: ['cache_type']
-});
+      securityAlertsActive: new Gauge({
+        name: 'security_alerts_active',
+        help: 'Number of active security alerts',
+        labelNames: ['severity'],
+        registers: [this.register]
+      }),
 
-// エラー率
-const errorRateGauge = new client.Gauge({
-  name: 'permission_error_rate',
-  help: '権限チェックのエラー率',
-  labelNames: ['error_type']
-});
+      securityAlertsTotal: new Counter({
+        name: 'security_alerts_total',
+        help: 'Total number of security alerts',
+        labelNames: ['type', 'severity'],
+        registers: [this.register]
+      }),
 
-// アクティブセッション数
-const activeSessionsGauge = new client.Gauge({
-  name: 'active_sessions_total',
-  help: 'アクティブなセッションの総数'
-});
-
-// 権限変更の追跡
-const permissionChangesCounter = new client.Counter({
-  name: 'permission_changes_total',
-  help: '権限変更の総数',
-  labelNames: ['change_type', 'resource']
-});
-
-register.registerMetric(permissionCheckHistogram);
-register.registerMetric(tokenOperationsCounter);
-register.registerMetric(accessAttemptsCounter);
-register.registerMetric(cachingGauge);
-register.registerMetric(errorRateGauge);
-register.registerMetric(activeSessionsGauge);
-register.registerMetric(permissionChangesCounter);
-
-export const Prometheus = {
-  register,
-  Histogram: client.Histogram,
-  Counter: client.Counter,
-  Gauge: client.Gauge,
-  metrics: {
-    permissionCheck: permissionCheckHistogram,
-    tokenOperations: tokenOperationsCounter,
-    accessAttempts: accessAttemptsCounter,
-    caching: cachingGauge,
-    errorRate: errorRateGauge,
-    activeSessions: activeSessionsGauge,
-    permissionChanges: permissionChangesCounter
+      cacheHits: new Counter({
+        name: 'cache_hits_total',
+        help: 'Total number of cache hits/misses',
+        labelNames: ['cache', 'result'],
+        registers: [this.register]
+      })
+    };
   }
-};
+
+  public static getInstance(): PrometheusMetrics {
+    if (!PrometheusMetrics.instance) {
+      PrometheusMetrics.instance = new PrometheusMetrics();
+    }
+    return PrometheusMetrics.instance;
+  }
+}
+
+export const Prometheus = PrometheusMetrics.getInstance();
