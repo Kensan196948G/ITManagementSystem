@@ -1,10 +1,5 @@
 import express from 'express';
 import cors from 'cors';
-import authRouter from './routes/auth';
-import monitoringRouter from './routes/monitoring';
-import securityRouter from './routes/security';
-import metricsRouter from './routes/metrics';
-import { errorHandler } from './middleware/errorHandler';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { Prometheus } from './metrics/prometheus';
@@ -20,8 +15,11 @@ const app = express();
 // セキュリティ設定
 app.use(helmet());
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3001',
-  credentials: true
+  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['Content-Length', 'Content-Type']
 }));
 
 // レート制限
@@ -29,6 +27,7 @@ const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'),
   max: parseInt(process.env.RATE_LIMIT_MAX || '100')
 });
+
 app.use('/api/', limiter);
 
 // Prometheusメトリクスのエンドポイント
@@ -37,18 +36,5 @@ app.get('/metrics', async (req, res) => {
   const metrics = await Prometheus.register.metrics();
   res.send(metrics);
 });
-
-// ミドルウェア
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// ルーター
-app.use('/api/auth', authRouter);
-app.use('/api/monitoring', monitoringRouter);
-app.use('/api/security', securityRouter);
-app.use('/api/metrics', metricsRouter);
-
-// エラーハンドリング
-app.use(errorHandler);
 
 export default app;

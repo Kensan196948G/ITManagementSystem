@@ -118,6 +118,13 @@ class LoggingService {
     });
   }
 
+  public logInfo(message: string, metadata?: any) {
+    this.logger.info(message, {
+      ...metadata,
+      timestamp: new Date()
+    });
+  }
+
   public async queryLogs(
     // 将来の実装のための型定義
     _options?: {

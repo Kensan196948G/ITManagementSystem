@@ -75,7 +75,7 @@ export class SecurityMonitorService {
     const alerts: Alert[] = [];
     const rows = await this.sqlite.all<{ severity: string; count: number }>(
       'SELECT severity, COUNT(*) as count FROM security_events GROUP BY severity'
-    );
+    ) || []; // Ensure rows is an array even if SQLite returns null/undefined
 
     for (const row of rows) {
       const { count, severity } = row;

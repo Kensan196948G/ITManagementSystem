@@ -24,28 +24,40 @@ const AuthContext = createContext<AuthContextType>({
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, setState] = useState<AuthState>({
-    isAuthenticated: false,
+    isAuthenticated: Boolean(localStorage.getItem('token')), // トークンの存在で初期認証状態を設定
     user: null,
-    token: null,
+    token: localStorage.getItem('token'),
     loading: true,
     error: null,
   });
 
   useEffect(() => {
     const initAuth = async () => {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setState(prev => ({
+          ...prev,
+          loading: false,
+          isAuthenticated: false,
+        }));
+        return;
+      }
+
       try {
         const user = await authApi.getCurrentUser();
         setState(prev => ({
           ...prev,
-          isAuthenticated: true,
           user,
+          isAuthenticated: Boolean(user),
           loading: false,
         }));
       } catch (error) {
+        localStorage.removeItem('token'); // エラー時はトークンを削除
         setState(prev => ({
           ...prev,
           loading: false,
-          error: 'Authentication failed',
+          isAuthenticated: false,
+          user: null,
         }));
       }
     };
@@ -54,22 +66,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async (credentials: LoginFormData) => {
+    setState(prev => ({ ...prev, loading: true, error: null }));
     try {
       const response = await authApi.login(credentials);
-      if (response.status === 'success' && response.data) {
+      if (response.status === 'success' && response.data?.user) {
         setState(prev => ({
           ...prev,
           isAuthenticated: true,
-          user: response?.data?.user || null,
-          token: response?.data?.token || null,
+          user: response.data.user,
+          token: response.data.token,
+          loading: false,
           error: null,
         }));
+      } else {
+        throw new Error('Invalid response format');
       }
       return response;
     } catch (error) {
       setState(prev => ({
         ...prev,
+        loading: false,
         error: 'Login failed',
+        isAuthenticated: false,
+        user: null,
+        token: null,
       }));
       throw error;
     }
@@ -78,6 +98,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = async () => {
     try {
       await authApi.logout();
+    } finally {
+      // エラーが発生しても状態をクリアする
       setState({
         isAuthenticated: false,
         user: null,
@@ -85,11 +107,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loading: false,
         error: null,
       });
-    } catch (error) {
-      setState(prev => ({
-        ...prev,
-        error: 'Logout failed',
-      }));
+      localStorage.removeItem('token');
     }
   };
 
@@ -99,7 +117,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setState(prev => ({
         ...prev,
         user,
-        isAuthenticated: true,
+        isAuthenticated: Boolean(user),
       }));
       return user;
     } catch (error) {

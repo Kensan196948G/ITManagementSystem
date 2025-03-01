@@ -28,6 +28,7 @@ declare class LoggingService {
         unit: string;
         tags?: Record<string, string>;
     }): void;
+    logInfo(message: string, metadata?: any): void;
     queryLogs(_options?: {
         startDate: Date;
         endDate: Date;

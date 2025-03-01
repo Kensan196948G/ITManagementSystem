@@ -1,14 +1,16 @@
 import axios from 'axios';
 import { ApiResponse, AuthState, User, LoginFormData, Alert, LogEntry } from '../types/api';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000/api';
+// REACT_APP_API_URLが設定されていない場合は3002ポートを使用
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3002/api';
 
-const axiosInstance = axios.create({
+// axiosInstanceの設定でwithCredentialsをfalseに変更（CORSエラー防止）
+export const axiosInstance = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: true,
+  withCredentials: false,
 });
 
 // リクエストインターセプター
@@ -39,12 +41,15 @@ axiosInstance.interceptors.response.use(
 
 export const authApi = {
   async login(credentials: LoginFormData): Promise<ApiResponse<AuthState>> {
-    const response = await axiosInstance.post<ApiResponse<AuthState>>(
-      '/auth/login',
-      credentials
-    );
+    const endpoint = process.env.NODE_ENV === 'development' 
+      ? '/auth/dev/login' 
+      : '/auth/login';
+    
+    const response = await axiosInstance.post<ApiResponse<AuthState>>(endpoint, credentials);
     if (response.data.data?.token) {
       localStorage.setItem('token', response.data.data.token);
+      // トークンをセットしたら、レスポンスヘッダーも更新
+      axiosInstance.defaults.headers.common['Authorization'] = `Bearer ${response.data.data.token}`;
     }
     return response.data;
   },
@@ -52,6 +57,7 @@ export const authApi = {
   async logout(): Promise<void> {
     await axiosInstance.post('/auth/logout');
     localStorage.removeItem('token');
+    delete axiosInstance.defaults.headers.common['Authorization'];
   },
 
   async getCurrentUser(): Promise<User | null> {
@@ -59,34 +65,33 @@ export const authApi = {
       const response = await axiosInstance.get<ApiResponse<User>>('/auth/me');
       return response.data.data || null;
     } catch (error) {
+      console.error('Failed to get current user:', error);
       return null;
     }
   },
 
   checkPermission: async (params: { userEmail: string; check: { resource: string; action: string } }): Promise<boolean> => {
-    const response = await fetch(`${API_BASE_URL}/auth/check-permission`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(params),
-    });
-    const data = await response.json();
-    return data.allowed;
+    const response = await axiosInstance.post('/auth/check-permission', params);
+    return response.data.allowed;
   }
 };
 
 export const metricsApi = {
   async getSystemMetrics() {
-    const response = await axiosInstance.get('/metrics/system');
-    return response.data;
+    try {
+      const response = await axiosInstance.get('/metrics/system');
+      return response.data.data;
+    } catch (error) {
+      console.error('Failed to fetch system metrics:', error);
+      throw error;
+    }
   },
 };
 
 export const alertsApi = {
   getAlerts: async (): Promise<Alert[]> => {
-    const response = await fetch(`${API_BASE_URL}/security/dashboard`);
-    const data = await response.json();
+    const response = await axiosInstance.get('/security/dashboard');
+    const data = await response.data;
     if (!data || !data.activeAlerts) {
       throw new Error('Failed to fetch alerts');
     }
@@ -94,25 +99,20 @@ export const alertsApi = {
   },
 
   acknowledgeAlert: async (alertId: string): Promise<ApiResponse> => {
-    const response = await fetch(`${API_BASE_URL}/security/incidents/${alertId}/respond`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ action: 'acknowledge' }),
+    const response = await axiosInstance.post(`/security/incidents/${alertId}/respond`, {
+      action: 'acknowledge'
     });
-    return response.json();
+    return response.data;
   },
 };
 
 export const logsApi = {
   getLogs: async (): Promise<LogEntry[]> => {
-    const response = await fetch(`${API_BASE_URL}/monitoring/logs`);
-    const data: ApiResponse<LogEntry[]> = await response.json();
-    if (data.status === 'error' || !data.data) {
-      throw new Error(data.message || 'Failed to fetch logs');
+    const response = await axiosInstance.get('/monitoring/logs');
+    if (response.data.status === 'error' || !response.data.data) {
+      throw new Error(response.data.message || 'Failed to fetch logs');
     }
-    return data.data;
+    return response.data.data;
   },
 };
 

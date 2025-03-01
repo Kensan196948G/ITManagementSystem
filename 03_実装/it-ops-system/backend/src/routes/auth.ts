@@ -30,8 +30,18 @@ const adConfig = {
 
 const ad = new ActiveDirectory(adConfig);
 
-// レート制限の適用
-const loginLimiter = rateLimit({
+// 開発環境用のレート制限設定
+const devLoginLimiter = rateLimit({
+  windowMs: 60000, // 1分
+  max: 100, // 1分あたり100リクエストまで
+  message: {
+    status: 'error',
+    message: 'Too many login attempts from this IP, please try again after a minute'
+  }
+});
+
+// 本番環境用のレート制限設定
+const prodLoginLimiter = rateLimit({
   windowMs: securityConfig.rateLimit.windowMs,
   max: securityConfig.rateLimit.max,
   message: {
@@ -39,6 +49,9 @@ const loginLimiter = rateLimit({
     message: securityConfig.rateLimit.message
   }
 });
+
+// 環境に応じたレート制限を適用
+const loginLimiter = process.env.NODE_ENV === 'development' ? devLoginLimiter : prodLoginLimiter;
 
 // JWTトークン生成関数
 const generateToken = (user: any): string => {
@@ -165,6 +178,44 @@ router.post('/login', loginLimiter, async (req, res, next) => {
           }
         });
       });
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// モック認証用エンドポイント（開発環境のみ）
+router.post('/dev/login', devLoginLimiter, async (req, res, next) => {
+  if (process.env.NODE_ENV !== 'development' || process.env.AUTH_MODE !== 'mock') {
+    return res.status(404).json({
+      status: 'error',
+      message: 'This endpoint is only available in development mode with mock authentication'
+    });
+  }
+
+  try {
+    const mockUser = {
+      id: 'mock-user-001',
+      username: 'mockuser',
+      displayName: 'Mock User',
+      email: 'mockuser@example.com',
+      roles: ['admin', 'user'],
+      memberOf: ['IT-Ops-Alert-Readers', 'IT-Ops-Metrics-Viewers']
+    };
+
+    const token = generateToken(mockUser);
+
+    res.json({
+      status: 'success',
+      data: {
+        token,
+        user: {
+          username: mockUser.username,
+          displayName: mockUser.displayName,
+          email: mockUser.email,
+          groups: mockUser.memberOf
+        }
+      }
     });
   } catch (error) {
     next(error);

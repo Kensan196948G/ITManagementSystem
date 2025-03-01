@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { PermissionCheck } from '../components/PermissionCheck';
 import Dashboard from '../pages/Dashboard';
@@ -7,7 +7,9 @@ import Settings from '../pages/Settings';
 import Security from '../pages/Security';
 import Metrics from '../pages/Metrics';
 import Users from '../pages/Users';
+import Login from '../pages/Login';
 import { GraphAPIPermissionCheck } from '../components/admin/GraphAPIPermissionCheck';
+import { AppLayout } from '../components/AppLayout';
 
 export const AppRouter = () => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -19,24 +21,39 @@ export const AppRouter = () => {
   return (
     <Router>
       <Routes>
-        {/* 基本ダッシュボード - 全ユーザーアクセス可能 */}
-        <Route path="/" element={<Dashboard />} />
-        
+        {/* 認証不要のルート */}
+        <Route path="/login" element={!isAuthenticated ? <Login /> : <Navigate to="/" />} />
+
+        {/* 認証が必要なルート */}
+        <Route path="/" element={isAuthenticated ? <AppLayout><Dashboard /></AppLayout> : <Navigate to="/login" />} />
+
         {/* メトリクス - 閲覧/編集権限を分離 */}
         <Route 
           path="/metrics" 
           element={
-            <PermissionCheck resource="metrics" action="read">
-              <Metrics />
-            </PermissionCheck>
+            isAuthenticated ? (
+              <AppLayout>
+                <PermissionCheck resource="metrics" action="read">
+                  <Metrics />
+                </PermissionCheck>
+              </AppLayout>
+            ) : (
+              <Navigate to="/login" />
+            )
           } 
         />
         <Route 
           path="/metrics/edit" 
           element={
-            <PermissionCheck resource="metrics" action="write">
-              <Metrics editMode={true} />
-            </PermissionCheck>
+            isAuthenticated ? (
+              <AppLayout>
+                <PermissionCheck resource="metrics" action="write">
+                  <Metrics editMode={true} />
+                </PermissionCheck>
+              </AppLayout>
+            ) : (
+              <Navigate to="/login" />
+            )
           } 
         />
 
@@ -44,17 +61,29 @@ export const AppRouter = () => {
         <Route 
           path="/security" 
           element={
-            <PermissionCheck resource="security" action="read">
-              <Security />
-            </PermissionCheck>
+            isAuthenticated ? (
+              <AppLayout>
+                <PermissionCheck resource="security" action="read">
+                  <Security />
+                </PermissionCheck>
+              </AppLayout>
+            ) : (
+              <Navigate to="/login" />
+            )
           } 
         />
         <Route 
           path="/security/configure" 
           element={
-            <PermissionCheck resource="security" action="write">
-              <Security editMode={true} />
-            </PermissionCheck>
+            isAuthenticated ? (
+              <AppLayout>
+                <PermissionCheck resource="security" action="write">
+                  <Security editMode={true} />
+                </PermissionCheck>
+              </AppLayout>
+            ) : (
+              <Navigate to="/login" />
+            )
           } 
         />
 
@@ -62,17 +91,29 @@ export const AppRouter = () => {
         <Route 
           path="/users" 
           element={
-            <PermissionCheck resource="users" action="read">
-              <Users />
-            </PermissionCheck>
+            isAuthenticated ? (
+              <AppLayout>
+                <PermissionCheck resource="users" action="read">
+                  <Users />
+                </PermissionCheck>
+              </AppLayout>
+            ) : (
+              <Navigate to="/login" />
+            )
           } 
         />
         <Route 
           path="/users/manage" 
           element={
-            <PermissionCheck resource="users" action="write">
-              <Users editMode={true} />
-            </PermissionCheck>
+            isAuthenticated ? (
+              <AppLayout>
+                <PermissionCheck resource="users" action="write">
+                  <Users editMode={true} />
+                </PermissionCheck>
+              </AppLayout>
+            ) : (
+              <Navigate to="/login" />
+            )
           } 
         />
 
@@ -80,9 +121,15 @@ export const AppRouter = () => {
         <Route 
           path="/settings" 
           element={
-            <PermissionCheck resource="system" action="write">
-              <Settings />
-            </PermissionCheck>
+            isAuthenticated ? (
+              <AppLayout>
+                <PermissionCheck resource="system" action="write">
+                  <Settings />
+                </PermissionCheck>
+              </AppLayout>
+            ) : (
+              <Navigate to="/login" />
+            )
           } 
         />
 
@@ -90,12 +137,20 @@ export const AppRouter = () => {
         <Route 
           path="/admin/graph-permissions" 
           element={
-            <GraphAPIPermissionCheck>
-              {/* 空のチャイルドレンとしてnullを渡す */}
-              {null}
-            </GraphAPIPermissionCheck>
+            isAuthenticated ? (
+              <AppLayout>
+                <GraphAPIPermissionCheck>
+                  {null}
+                </GraphAPIPermissionCheck>
+              </AppLayout>
+            ) : (
+              <Navigate to="/login" />
+            )
           } 
         />
+
+        {/* 404ページ */}
+        <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </Router>
   );
