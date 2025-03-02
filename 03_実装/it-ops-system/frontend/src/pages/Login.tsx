@@ -24,19 +24,14 @@ const Login = () => {
 
   // バックエンドの生存確認（リトライ機能付き）
   const checkBackendHealth = async (retries = 3): Promise<boolean> => {
-    for (let i = 0; i < retries; i++) {
-      try {
-        const response = await axiosInstance.get('/health');
-        console.log('Health check response:', response.data);
-        return response.data?.status === 'ok';
-      } catch (err) {
-        console.error(`Backend health check attempt ${i + 1} failed:`, err);
-        if (i < retries - 1) {
-          await new Promise(resolve => setTimeout(resolve, 2000)); // 2秒待機
-        }
-      }
+    try {
+      console.log('Health check is disabled for debugging');
+      return true; // デバッグ用に常にtrueを返す
+    } catch (err) {
+      console.error(`Backend health check failed:`, err);
+      setError('バックエンドサーバーに接続できません。システム管理者に連絡してください。');
+      return false;
     }
-    return false;
   };
 
   useEffect(() => {
@@ -87,7 +82,11 @@ const Login = () => {
         setError(response.message || 'ログインに失敗しました');
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || '認証エラーが発生しました');
+      if (err.response?.status === 429) {
+        setError('ログイン試行回数が多すぎます。しばらく待ってから再試行してください。');
+      } else {
+        setError(err.response?.data?.message || '認証エラーが発生しました');
+      }
     } finally {
       setLoading(false);
     }

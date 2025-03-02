@@ -3,7 +3,9 @@ import compression from 'compression';
 import morgan from 'morgan';
 import { config } from 'dotenv';
 import cors from 'cors';
+import http from 'http';
 import { requestLogger, errorLogger, errorHandler } from './middleware/errorHandling';
+import { WebSocketHandler, startSystemStatusUpdates } from './routes/websocket';
 import authRouter from './routes/auth';
 import systemRouter from './routes/system';
 import monitoringRouter from './routes/monitoring';
@@ -51,6 +53,8 @@ app.use(morgan(isDevelopment ? 'dev' : 'combined'));
 app.use(requestLogger);
 
 // ヘルスチェックエンドポイントを最初に定義
+// app.tsで既に定義しているのでコメントアウト
+/*
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'ok', 
@@ -58,6 +62,7 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+*/
 
 // ルートパスに対する基本的なレスポンス
 app.get('/', (req, res) => {
@@ -77,16 +82,39 @@ apiRouter.use('/metrics', metricsRouter);
 
 // APIルーターをマウント
 app.use('/api', apiRouter);
+// 直接マウントしたルートも追加（フロントエンドの/apiプレフィックスを維持する場合）
+app.use('/auth', authRouter);
+// 開発用ログインエンドポイント用のルートも追加
+app.use('/auth/dev', authRouter);
 
 // エラーハンドリングミドルウェア（必ず他のミドルウェアの後に配置）
 app.use(errorLogger);
 app.use(errorHandler);
 
-// サーバー起動
+// HTTPサーバーを作成
 const PORT = process.env.PORT || 3002;
-const server = app.listen(PORT, () => {
+const server = http.createServer(app);
+
+// WebSocketハンドラーの初期化
+const wsHandler = WebSocketHandler.getInstance();
+wsHandler.initialize(server);
+
+// システム状態の定期送信を開始
+const statusInterval = startSystemStatusUpdates(wsHandler);
+
+// サーバー終了時にWebSocketリソースをクリーンアップ
+process.on('SIGTERM', () => {
+  if (statusInterval) {
+    clearInterval(statusInterval);
+  }
+  wsHandler.cleanup();
+});
+
+// サーバーを起動
+server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
   console.log(`API documentation available at http://localhost:${PORT}/api/health`);
+  console.log(`WebSocket server is running at ws://localhost:${PORT}/ws`);
 });
 
 // グレースフルシャットダウン

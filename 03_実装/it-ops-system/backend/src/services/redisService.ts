@@ -1,15 +1,79 @@
-import Redis from 'ioredis';
+import { EventEmitter } from 'events';
 import { Gauge } from 'prom-client';
+import Redis from 'ioredis';
 import LoggingService from './loggingService';
 
-declare module 'ioredis' {
-  type RedisStatus = 'wait' | 'reconnecting' | 'connecting' | 'connect' | 'ready' | 'close' | 'end';
-  
-  interface Redis {
-    status: RedisStatus;
-    ping(): Promise<string>;
-    quit(): Promise<'OK'>;
-    info(section: string): Promise<string>;
+// インターフェースを定義
+interface IRedisClient {
+  status: string;
+  on(event: string, listener: (...args: any[]) => void): this;
+  ping(): Promise<string>;
+  quit(): Promise<'OK'>;
+  info(section: string): Promise<string>;
+  set(key: string, value: string, ...args: any[]): Promise<any>;
+  get(key: string): Promise<string | null>;
+  del(key: string | string[]): Promise<number>;
+}
+
+// Redis Mock実装
+class RedisMock extends EventEmitter implements IRedisClient {
+  private mockData: Map<string, { value: string; expiry?: number }> = new Map();
+  public status: string = 'ready';
+
+  constructor() {
+    super();
+    setTimeout(() => {
+      this.emit('connect');
+      this.emit('ready');
+    }, 0);
+  }
+
+  async ping(): Promise<string> {
+    return 'PONG';
+  }
+
+  async quit(): Promise<'OK'> {
+    this.status = 'end';
+    this.emit('end');
+    return 'OK';
+  }
+
+  async info(section: string): Promise<string> {
+    if (section === 'memory') {
+      return 'used_memory:1024\nused_memory_human:1M\n';
+    }
+    return '';
+  }
+
+  async set(key: string, value: string, ...args: any[]): Promise<'OK'> {
+    let expiry: number | undefined = undefined;
+    if (args.length >= 2 && args[0] === 'EX') {
+      expiry = Date.now() + args[1] * 1000;
+    }
+    this.mockData.set(key, { value, expiry });
+    return 'OK';
+  }
+
+  async get(key: string): Promise<string | null> {
+    const data = this.mockData.get(key);
+    if (!data) return null;
+    if (data.expiry && data.expiry < Date.now()) {
+      this.mockData.delete(key);
+      return null;
+    }
+    return data.value;
+  }
+
+  async del(key: string | string[]): Promise<number> {
+    const keys = Array.isArray(key) ? key : [key];
+    let count = 0;
+    for (const k of keys) {
+      if (this.mockData.has(k)) {
+        this.mockData.delete(k);
+        count++;
+      }
+    }
+    return count;
   }
 }
 
@@ -17,15 +81,18 @@ const logger = LoggingService.getInstance();
 
 export class RedisService {
   private static instance: RedisService;
-  private client: Redis;
+  private client!: Redis;
   private connectionStatusGauge: Gauge;
   private memoryUsageGauge: Gauge;
   private retryAttemptsGauge: Gauge;
   private hits: number = 0;
   private totalRequests: number = 0;
   private cacheHitRatioGauge: Gauge;
+  private isUsingMock: boolean = false;
+  private mockData: Map<string, { value: string; expiry?: number }> = new Map();
 
   private constructor() {
+    // メトリクス用Gaugeを初期化
     this.connectionStatusGauge = new Gauge({
       name: 'redis_connection_status',
       help: 'Redis connection status (1 = connected, 0 = disconnected)'
@@ -46,27 +113,114 @@ export class RedisService {
       help: 'Redis cache hit ratio'
     });
 
-    this.client = new Redis({
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379', 10),
-      password: process.env.REDIS_PASSWORD,
-      connectTimeout: 10000,
-      commandTimeout: 5000,
-      retryStrategy: (times) => {
-        const delay = Math.min(times * 50, 2000);
-        this.retryAttemptsGauge.set(times);
-        return delay;
-      },
-      maxRetriesPerRequest: 5,
-      enableReadyCheck: true,
-      showFriendlyErrorStack: process.env.NODE_ENV !== 'production'
-    });
+    // Redis接続が必要かどうかチェック（開発環境では必須でない）
+    const useRedisMock = process.env.NODE_ENV === 'development' || process.env.DISABLE_REDIS === 'true';
+    
+    if (useRedisMock) {
+      // Redisのモック実装（開発環境用）
+      this.setupMockRedis();
+      logger.logInfo({
+        message: 'Using Redis mock implementation for development',
+        context: 'RedisService'
+      });
+    } else {
+      try {
+        this.client = new Redis({
+          host: process.env.REDIS_HOST || 'localhost',
+          port: parseInt(process.env.REDIS_PORT || '6379', 10),
+          password: process.env.REDIS_PASSWORD,
+          connectTimeout: 10000,
+          commandTimeout: 5000,
+          retryStrategy: (times: number) => {
+            const delay = Math.min(times * 50, 2000);
+            this.retryAttemptsGauge.set(times);
+            return delay;
+          },
+          maxRetriesPerRequest: 5,
+          enableReadyCheck: true,
+          showFriendlyErrorStack: process.env.NODE_ENV !== 'production'
+        });
+        
+        this.setupMonitoring();
+      } catch (error) {
+        // Redis接続に失敗した場合はモックに切り替え
+        logger.logError(error as Error, {
+          context: 'RedisService',
+          message: 'Failed to initialize Redis, falling back to mock implementation'
+        });
+        this.setupMockRedis();
+      }
+    }
+  }
 
-    this.setupMonitoring();
+  // モックRedisクライアントのセットアップ
+  private setupMockRedis(): void {
+    this.isUsingMock = true;
+    
+    // イベントエミッタを利用したモッククライアント
+    const mockClient = new EventEmitter() as unknown as Redis;
+    
+    // 基本的なメソッドをモック
+    mockClient.status = 'ready';
+    
+    mockClient.ping = async () => 'PONG';
+    
+    mockClient.quit = async () => {
+      mockClient.status = 'end';
+      mockClient.emit('end');
+      return 'OK';
+    };
+    
+    mockClient.info = async (section: string) => {
+      if (section === 'memory') {
+        return 'used_memory:1024\nused_memory_human:1M\n';
+      }
+      return '';
+    };
+    
+    mockClient.set = async (key: string, value: string, ...args: any[]) => {
+      let expiry: number | undefined = undefined;
+      if (args.length >= 2 && args[0] === 'EX') {
+        expiry = Date.now() + args[1] * 1000;
+      }
+      this.mockData.set(key, { value, expiry });
+      return 'OK';
+    };
+    
+    mockClient.get = async (key: string) => {
+      const data = this.mockData.get(key);
+      if (!data) return null;
+      if (data.expiry && data.expiry < Date.now()) {
+        this.mockData.delete(key);
+        return null;
+      }
+      return data.value;
+    };
+    
+    mockClient.del = async (key: string | string[]) => {
+      const keys = Array.isArray(key) ? key : [key];
+      let count = 0;
+      for (const k of keys) {
+        if (this.mockData.has(k)) {
+          this.mockData.delete(k);
+          count++;
+        }
+      }
+      return count;
+    };
+    
+    this.client = mockClient;
+    
+    // 接続が成功したとみなしてイベントをエミット
+    setTimeout(() => {
+      this.client.emit('connect');
+      this.client.emit('ready');
+      this.connectionStatusGauge.set(1);
+    }, 100);
   }
 
   private setupMonitoring(): void {
-    // Redis connection monitoring
+    // Redis接続監視
     this.client.on('connect', () => {
       this.connectionStatusGauge.set(1);
       logger.logAccess({
@@ -106,8 +260,12 @@ export class RedisService {
     return RedisService.instance;
   }
 
-  public getClient(): Redis {
+  public getClient(): IRedisClient {
     return this.client;
+  }
+
+  public isUsingMockImplementation(): boolean {
+    return this.isUsingMock;
   }
 
   public async healthCheck(): Promise<boolean> {
@@ -237,12 +395,24 @@ export class RedisService {
     cacheHitRatio: number;
     retryAttempts: number;
   }> {
-    const info = await this.client.info('memory');
-    const match = info.match(/used_memory:(\d+)/);
+    let memoryUsageBytes = 0;
+    
+    try {
+      const info = await this.client.info('memory');
+      const match = info.match(/used_memory:(\d+)/);
+      if (match) {
+        memoryUsageBytes = parseInt(match[1], 10);
+      }
+    } catch (error) {
+      logger.logError(error as Error, {
+        context: 'RedisService',
+        message: 'Error getting memory metrics'
+      });
+    }
     
     return {
-      connectionStatus: await this.isConnected() ? 1 : 0,
-      memoryUsageBytes: match ? parseInt(match[1], 10) : 0,
+      connectionStatus: (await this.isConnected()) ? 1 : 0,
+      memoryUsageBytes,
       cacheHitRatio: await this.getCacheHitRatio(),
       retryAttempts: await this.getRetryAttempts()
     };

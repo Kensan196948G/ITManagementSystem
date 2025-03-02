@@ -105,10 +105,12 @@ export interface User {
 export interface AuthResponse {
   token: string;
   user: {
+    id?: string;
     username: string;
     displayName: string;
     email: string;
-    groups: string[];
+    groups?: string[];
+    roles?: string[];
   };
 }
 

@@ -172,10 +172,17 @@ class SQLiteService {
     }
     async healthCheck() {
         try {
-            await this.get('SELECT 1');
-            return true;
+            if (!this.db) {
+                await this.initialize();
+            }
+            const result = await this.get('SELECT 1');
+            return result !== undefined;
         }
-        catch {
+        catch (error) {
+            logger.logError(error, {
+                context: 'SQLiteService',
+                message: 'ヘルスチェックエラー'
+            });
             return false;
         }
     }

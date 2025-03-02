@@ -75,18 +75,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           ...prev,
           isAuthenticated: true,
           user: {
-            id: authData.user.username,
+            id: authData.user.id || authData.user.username,
             username: authData.user.username,
             displayName: authData.user.displayName,
             email: authData.user.email,
-            roles: authData.user.groups,
+            roles: authData.user.roles || authData.user.groups || [],
           },
           token: authData.token,
           loading: false,
           error: null,
         }));
       } else {
-        throw new Error('Invalid response format');
+        console.warn('Unexpected response format:', response);
+        // エラーをスローせず、最善を尽くして処理
+        setState(prev => ({
+          ...prev,
+          loading: false,
+          error: 'ログイン情報の処理に問題が発生しました',
+        }));
       }
       return response;
     } catch (error) {

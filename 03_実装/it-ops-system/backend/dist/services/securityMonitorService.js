@@ -69,7 +69,7 @@ class SecurityMonitorService {
     }
     async checkForAnomalies() {
         const alerts = [];
-        const rows = await this.sqlite.all('SELECT severity, COUNT(*) as count FROM security_events GROUP BY severity');
+        const rows = await this.sqlite.all('SELECT severity, COUNT(*) as count FROM security_events GROUP BY severity') || []; // Ensure rows is an array even if SQLite returns null/undefined
         for (const row of rows) {
             const { count, severity } = row;
             const severityType = severity;

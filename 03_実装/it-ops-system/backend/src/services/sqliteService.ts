@@ -187,9 +187,16 @@ export class SQLiteService {
 
   public async healthCheck(): Promise<boolean> {
     try {
-      await this.get('SELECT 1');
-      return true;
-    } catch {
+      if (!this.db) {
+        await this.initialize();
+      }
+      const result = await this.get('SELECT 1');
+      return result !== undefined;
+    } catch (error) {
+      logger.logError(error as Error, {
+        context: 'SQLiteService',
+        message: 'ヘルスチェックエラー'
+      });
       return false;
     }
   }

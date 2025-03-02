@@ -4,11 +4,11 @@ import { ApiResponse, AuthState, User, LoginFormData, Alert, LogEntry, AuthRespo
 // 開発環境の判定
 const isDevelopment = process.env.NODE_ENV === 'development';
 
-// 開発環境ではプロキシ設定を使用するため、相対パスを使用
-const API_BASE_URL = '/api';
+// 環境変数からAPIのベースURLを取得
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3002';
 
 export const axiosInstance = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: '/api',  // /apiプレフィックスを維持
   headers: {
     'Content-Type': 'application/json',
   },
@@ -58,6 +58,7 @@ axiosInstance.interceptors.response.use(
 
 export const authApi = {
   async login(credentials: LoginFormData): Promise<ApiResponse<AuthResponse>> {
+    // 開発環境用のエンドポイント
     const endpoint = isDevelopment ? '/auth/dev/login' : '/auth/login';
     try {
       const response = await axiosInstance.post<ApiResponse<AuthResponse>>(endpoint, credentials);
@@ -73,14 +74,14 @@ export const authApi = {
   },
 
   async logout(): Promise<void> {
-    await axiosInstance.post('/auth/logout');
+    await axiosInstance.post('/logout');
     localStorage.removeItem('token');
     delete axiosInstance.defaults.headers.common['Authorization'];
   },
 
   async getCurrentUser(): Promise<User | null> {
     try {
-      const response = await axiosInstance.get<ApiResponse<User>>('/auth/me');
+      const response = await axiosInstance.get<ApiResponse<User>>('/me');
       return response.data.data || null;
     } catch (error) {
       console.error('Failed to get current user:', error);
@@ -89,7 +90,7 @@ export const authApi = {
   },
 
   checkPermission: async (params: { userEmail: string; check: { resource: string; action: string } }): Promise<boolean> => {
-    const response = await axiosInstance.post('/auth/check-permission', params);
+    const response = await axiosInstance.post('/check-permission', params);
     return response.data.allowed;
   }
 };

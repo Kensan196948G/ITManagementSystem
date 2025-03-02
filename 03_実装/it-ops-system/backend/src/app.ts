@@ -25,7 +25,8 @@ app.use(cors({
 
 // ヘルスチェックエンドポイント（認証不要、最優先）
 app.get('/api/health', (req, res) => {
-  res.json({ 
+  // 簡素化したヘルスチェック - データベース接続チェックなし
+  res.json({
     status: 'ok',
     mode: isDevelopment ? 'development' : 'production',
     timestamp: new Date().toISOString()
@@ -44,8 +45,8 @@ app.use(express.urlencoded({ extended: true }));
 
 // 環境に応じたレート制限の設定
 const limiter = rateLimit({
-  windowMs: isDevelopment ? 1000 : parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'),
-  max: isDevelopment ? 100 : parseInt(process.env.RATE_LIMIT_MAX || '100'),
+  windowMs: isDevelopment ? 60000 : parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 開発環境では1分
+  max: isDevelopment ? 1000 : parseInt(process.env.RATE_LIMIT_MAX || '100'), // 開発環境では1分あたり1000リクエスト
   message: {
     status: 'error',
     message: 'Too many requests from this IP, please try again later.'
@@ -54,17 +55,35 @@ const limiter = rateLimit({
 
 // 認証エンドポイント用の緩和されたレート制限
 const authLimiter = rateLimit({
-  windowMs: isDevelopment ? 1000 : 900000,
-  max: isDevelopment ? 50 : 10,
+  windowMs: isDevelopment ? 60000 : 900000, // 開発環境では1分
+  max: isDevelopment ? 10000 : 10, // 開発環境では1分あたり10000リクエスト（実質制限なし）
   message: {
     status: 'error',
     message: 'Too many authentication attempts, please try again later.'
   }
 });
 
-// ルートの前にミドルウェアを適用
-app.use('/api/auth/', authLimiter);
-app.use('/api/', limiter);
+// レート制限設定の無効化（開発環境またはヘルスチェックエンドポイント用）
+// ヘルスチェックを完全に除外し、他のエンドポイントのみにレート制限を適用
+app.use((req, res, next) => {
+  if (req.path === '/api/health' || 
+      req.originalUrl === '/api/health' || 
+      req.path === '/health') {
+    return next();
+  }
+  
+  // 認証エンドポイント用のレート制限
+  if (req.path.startsWith('/api/auth/') || req.path.startsWith('/auth/')) {
+    return authLimiter(req, res, next);
+  }
+  
+  // その他のエンドポイント用のレート制限
+  if (req.path.startsWith('/api/') || req.path.startsWith('/')) {
+    return limiter(req, res, next);
+  }
+  
+  return next();
+});
 
 // ベースルート
 app.get('/api', (req, res) => {

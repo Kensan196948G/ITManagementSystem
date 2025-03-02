@@ -8,11 +8,13 @@ const sqliteService_1 = require("../services/sqliteService");
 const redisService_1 = require("../services/redisService");
 const systemMetrics_1 = require("../utils/systemMetrics");
 const loggingService_1 = __importDefault(require("../services/loggingService"));
+const auth_1 = require("../middleware/auth");
 const router = express_1.default.Router();
 const sqliteService = sqliteService_1.SQLiteService.getInstance();
 const redisService = redisService_1.RedisService.getInstance();
 const logger = loggingService_1.default.getInstance();
-router.get('/system', async (_req, res) => {
+// /api/metrics/system エンドポイント
+router.get('/system', auth_1.verifyToken, async (req, res) => {
     try {
         const metricsResults = await Promise.allSettled([
             (0, systemMetrics_1.cpuUsage)(),
@@ -50,7 +52,6 @@ router.get('/system', async (_req, res) => {
                 message: 'Error fetching SQLite metrics'
             });
         }
-        // Redis metrics with error handling
         let redisMetrics = {
             connectionStatus: 0,
             memoryUsageBytes: 0,
@@ -69,25 +70,29 @@ router.get('/system', async (_req, res) => {
             });
         }
         const systemMetrics = {
-            cpu: cpu || { error: 'Failed to fetch CPU usage' },
-            memory: memory || { error: 'Failed to fetch memory usage' },
-            network: network || { error: 'Failed to fetch network stats' },
-            database: {
-                type: 'sqlite',
-                connectionStatus: dbStatus ? 1 : 0,
-                memoryUsageBytes: memoryUsed,
-                operationsTotal: operationsCount
-            },
-            redis: redisMetrics
+            status: 'success',
+            data: {
+                cpu: cpu || { error: 'Failed to fetch CPU usage' },
+                memory: memory || { error: 'Failed to fetch memory usage' },
+                network: network || { error: 'Failed to fetch network stats' },
+                database: {
+                    type: 'sqlite',
+                    connectionStatus: dbStatus ? 1 : 0,
+                    memoryUsageBytes: memoryUsed,
+                    operationsTotal: operationsCount
+                },
+                redis: redisMetrics,
+                timestamp: new Date()
+            }
         };
         logger.logAccess({
-            userId: 'system',
+            userId: req.user?.id || 'system',
             action: 'get_metrics',
             resource: 'system',
             result: 'success',
-            ip: '',
-            userAgent: '',
-            details: { metricsCollected: Object.keys(systemMetrics) }
+            ip: req.ip || '',
+            userAgent: req.get('user-agent') || '',
+            details: { metricsCollected: Object.keys(systemMetrics.data) }
         });
         res.json(systemMetrics);
     }
@@ -96,7 +101,10 @@ router.get('/system', async (_req, res) => {
             context: 'SystemMetrics',
             message: 'Failed to fetch system metrics'
         });
-        res.status(500).json({ error: 'Failed to fetch system metrics' });
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to fetch system metrics'
+        });
     }
 });
 exports.default = router;

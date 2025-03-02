@@ -29,8 +29,20 @@ const adConfig = {
     password: process.env.AD_PASSWORD
 };
 const ad = new activedirectory2_1.default(adConfig);
-// レート制限の適用
-const loginLimiter = (0, express_rate_limit_1.default)({
+// 開発環境用のレート制限設定
+const devLoginLimiter = (0, express_rate_limit_1.default)({
+    windowMs: 60000, // 1分
+    max: 10000, // 1分あたり10000リクエストまで（実質制限なし）
+    message: {
+        status: 'error',
+        message: 'Too many login attempts from this IP, please try again after a minute'
+    },
+    standardHeaders: true, // X-RateLimit-* ヘッダーを返す
+    legacyHeaders: false, // X-RateLimit-* ヘッダーを使用しない
+    skipSuccessfulRequests: true, // 成功したリクエストはカウントしない
+});
+// 本番環境用のレート制限設定
+const prodLoginLimiter = (0, express_rate_limit_1.default)({
     windowMs: security_1.securityConfig.rateLimit.windowMs,
     max: security_1.securityConfig.rateLimit.max,
     message: {
@@ -38,6 +50,8 @@ const loginLimiter = (0, express_rate_limit_1.default)({
         message: security_1.securityConfig.rateLimit.message
     }
 });
+// 環境に応じたレート制限を適用
+const loginLimiter = process.env.NODE_ENV === 'development' ? devLoginLimiter : prodLoginLimiter;
 // JWTトークン生成関数
 const generateToken = (user) => {
     return jsonwebtoken_1.default.sign({
@@ -109,6 +123,55 @@ router.post('/login', loginLimiter, async (req, res, next) => {
                     }
                 });
             });
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+// モック認証用エンドポイント（開発環境のみ）
+router.post('/dev/login', devLoginLimiter, async (req, res, next) => {
+    try {
+        // 開発環境でない場合は404を返す
+        if (process.env.NODE_ENV !== 'development' || process.env.AUTH_MODE !== 'mock') {
+            return res.status(404).json({
+                status: 'error',
+                message: 'This endpoint is only available in development mode'
+            });
+        }
+        const { username, password } = req.body;
+        // モックユーザーの認証情報を検証
+        if (username !== 'mockuser' || password !== 'mockpass') {
+            return res.status(401).json({
+                status: 'error',
+                message: 'Invalid credentials'
+            });
+        }
+        const mockUser = {
+            id: 'mock-user-001',
+            username: 'mockuser',
+            displayName: 'Mock User',
+            email: 'mockuser@example.com',
+            roles: ['admin', 'user'],
+            memberOf: ['IT-Ops-Alert-Readers', 'IT-Ops-Metrics-Viewers']
+        };
+        const token = generateToken(mockUser);
+        // セッション管理を追加
+        await tokenManager_1.TokenManager.addUserSession(mockUser.id);
+        // レスポンスを返す - 通常のログインエンドポイントと同じ形式で返す
+        res.json({
+            status: 'success',
+            data: {
+                token,
+                user: {
+                    id: mockUser.id,
+                    username: mockUser.username,
+                    displayName: mockUser.displayName,
+                    email: mockUser.email,
+                    groups: mockUser.memberOf,
+                    roles: mockUser.roles
+                }
+            }
         });
     }
     catch (error) {

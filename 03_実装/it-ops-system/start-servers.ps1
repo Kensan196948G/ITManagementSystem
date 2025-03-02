@@ -30,12 +30,12 @@ function Clear-Port {
     $connections = netstat -ano | Select-String ":$Port\s+"
     if ($connections) {
         $connections | ForEach-Object {
-            $pid = $_.ToString().Split(' ')[-1]
+            $processId = $_.ToString().Split(' ')[-1]
             try {
-                Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
-                Write-Host "Stopped process with PID: $pid using port $Port" -ForegroundColor Green
+                Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+                Write-Host "Stopped process with PID: $processId using port $Port" -ForegroundColor Green
             } catch {
-                Write-Host "Failed to stop process with PID: $pid" -ForegroundColor Red
+                Write-Host "Failed to stop process with PID: $processId - Access might be denied" -ForegroundColor Red
             }
         }
         Start-Sleep -Seconds 1
@@ -100,6 +100,11 @@ Write-Host "`nServers are starting up..." -ForegroundColor Yellow
 Write-Host "Frontend will be available at: http://localhost:3000" -ForegroundColor Green
 Write-Host "Backend will be available at: http://localhost:3002" -ForegroundColor Green
 Write-Host "`nPress Ctrl+C in respective windows to stop the servers" -ForegroundColor Yellow
+
+# フロントエンドへアクセスするためにブラウザを自動的に起動
+Write-Host "Starting browser automatically..." -ForegroundColor Cyan
+Start-Sleep -Seconds 3 # サーバーの起動を少し待つ
+Start-Process "http://localhost:3000"
 
 # プロセスの監視
 try {

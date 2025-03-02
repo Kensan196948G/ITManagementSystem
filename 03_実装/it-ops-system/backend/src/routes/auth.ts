@@ -33,11 +33,14 @@ const ad = new ActiveDirectory(adConfig);
 // 開発環境用のレート制限設定
 const devLoginLimiter = rateLimit({
   windowMs: 60000, // 1分
-  max: 100, // 1分あたり100リクエストまで
+  max: 10000, // 1分あたり10000リクエストまで（実質制限なし）
   message: {
     status: 'error',
     message: 'Too many login attempts from this IP, please try again after a minute'
-  }
+  },
+  standardHeaders: true, // X-RateLimit-* ヘッダーを返す
+  legacyHeaders: false, // X-RateLimit-* ヘッダーを使用しない
+  skipSuccessfulRequests: true, // 成功したリクエストはカウントしない
 });
 
 // 本番環境用のレート制限設定
@@ -185,13 +188,13 @@ router.post('/login', loginLimiter, async (req, res, next) => {
 });
 
 // モック認証用エンドポイント（開発環境のみ）
-router.post('/dev/login', async (req, res, next) => {
+router.post('/dev/login', devLoginLimiter, async (req, res, next) => {
   try {
-    // 開発環境でない場合は404を返す
-    if (process.env.NODE_ENV !== 'development' || process.env.AUTH_MODE !== 'mock') {
+    // 開発環境およびDEV_LOGIN_ENABLEDが有効でない場合は404を返す
+    if (process.env.NODE_ENV !== 'development' && process.env.AUTH_MODE !== 'mock' && process.env.DEV_LOGIN_ENABLED !== 'true') {
       return res.status(404).json({
         status: 'error',
-        message: 'This endpoint is only available in development mode'
+        message: 'Development login endpoint is not available or disabled'
       });
     }
 
@@ -219,16 +222,18 @@ router.post('/dev/login', async (req, res, next) => {
     // セッション管理を追加
     await TokenManager.addUserSession(mockUser.id);
 
-    // レスポンスを返す
+    // レスポンスを返す - 通常のログインエンドポイントと同じ形式で返す
     res.json({
       status: 'success',
       data: {
         token,
         user: {
+          id: mockUser.id,
           username: mockUser.username,
           displayName: mockUser.displayName,
           email: mockUser.email,
-          groups: mockUser.memberOf
+          groups: mockUser.memberOf,
+          roles: mockUser.roles
         }
       }
     });
