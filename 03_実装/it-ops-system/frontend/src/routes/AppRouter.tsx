@@ -15,32 +15,61 @@ export const AppRouter = () => {
   const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
-    return <div>Loading...</div>;
+    return (
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh' 
+      }}>
+        Loading...
+      </div>
+    );
   }
 
   return (
     <Router>
       <Routes>
-        {/* 認証不要のルート */}
-        <Route path="/login" element={!isAuthenticated ? <Login /> : <Navigate to="/" />} />
-
-        {/* 認証が必要なルート */}
-        <Route path="/" element={isAuthenticated ? <AppLayout><Dashboard /></AppLayout> : <Navigate to="/login" />} />
-
-        {/* メトリクス - 閲覧/編集権限を分離 */}
+        {/* 認証前のルート */}
         <Route 
-          path="/metrics" 
+          path="/login" 
           element={
             isAuthenticated ? (
+              <Navigate to="/" replace />
+            ) : (
+              <Login />
+            )
+          } 
+        />
+
+        {/* 認証後のルート */}
+        <Route
+          path="/"
+          element={
+            !isAuthenticated ? (
+              <Navigate to="/login" replace />
+            ) : (
+              <AppLayout>
+                <Dashboard />
+              </AppLayout>
+            )
+          }
+        />
+
+        {/* メトリクス */}
+        <Route
+          path="/metrics"
+          element={
+            !isAuthenticated ? (
+              <Navigate to="/login" replace />
+            ) : (
               <AppLayout>
                 <PermissionCheck resource="metrics" action="read">
                   <Metrics />
                 </PermissionCheck>
               </AppLayout>
-            ) : (
-              <Navigate to="/login" />
             )
-          } 
+          }
         />
         <Route 
           path="/metrics/edit" 
@@ -57,18 +86,18 @@ export const AppRouter = () => {
           } 
         />
 
-        {/* セキュリティ設定 - 閲覧/編集権限を分離 */}
+        {/* セキュリティ設定 */}
         <Route 
           path="/security" 
           element={
-            isAuthenticated ? (
+            !isAuthenticated ? (
+              <Navigate to="/login" replace />
+            ) : (
               <AppLayout>
                 <PermissionCheck resource="security" action="read">
                   <Security />
                 </PermissionCheck>
               </AppLayout>
-            ) : (
-              <Navigate to="/login" />
             )
           } 
         />
@@ -87,18 +116,18 @@ export const AppRouter = () => {
           } 
         />
 
-        {/* ユーザー管理 - 閲覧/編集権限を分離 */}
+        {/* ユーザー管理 */}
         <Route 
           path="/users" 
           element={
-            isAuthenticated ? (
+            !isAuthenticated ? (
+              <Navigate to="/login" replace />
+            ) : (
               <AppLayout>
                 <PermissionCheck resource="users" action="read">
                   <Users />
                 </PermissionCheck>
               </AppLayout>
-            ) : (
-              <Navigate to="/login" />
             )
           } 
         />
@@ -117,40 +146,49 @@ export const AppRouter = () => {
           } 
         />
 
-        {/* システム設定 - 高度な権限が必要 */}
+        {/* システム設定 */}
         <Route 
           path="/settings" 
           element={
-            isAuthenticated ? (
+            !isAuthenticated ? (
+              <Navigate to="/login" replace />
+            ) : (
               <AppLayout>
                 <PermissionCheck resource="system" action="write">
                   <Settings />
                 </PermissionCheck>
               </AppLayout>
-            ) : (
-              <Navigate to="/login" />
             )
           } 
         />
 
-        {/* Graph API パーミッション管理 - グローバル管理者のみ */}
+        {/* Graph API パーミッション管理 */}
         <Route 
           path="/admin/graph-permissions" 
           element={
-            isAuthenticated ? (
+            !isAuthenticated ? (
+              <Navigate to="/login" replace />
+            ) : (
               <AppLayout>
                 <GraphAPIPermissionCheck>
                   {null}
                 </GraphAPIPermissionCheck>
               </AppLayout>
-            ) : (
-              <Navigate to="/login" />
             )
           } 
         />
 
         {/* 404ページ */}
-        <Route path="*" element={<Navigate to="/" />} />
+        <Route 
+          path="*" 
+          element={
+            !isAuthenticated ? (
+              <Navigate to="/login" replace />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          } 
+        />
       </Routes>
     </Router>
   );

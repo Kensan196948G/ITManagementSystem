@@ -6,10 +6,12 @@ import {
   Button,
   Typography,
   Alert,
-  Box
+  Box,
+  CircularProgress
 } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { axiosInstance } from '../services/api';
 
 const Login = () => {
   const [username, setUsername] = useState('');
@@ -20,30 +22,60 @@ const Login = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  // 開発環境の場合は自動ログインを試行
+  // バックエンドの生存確認（リトライ機能付き）
+  const checkBackendHealth = async (retries = 3): Promise<boolean> => {
+    for (let i = 0; i < retries; i++) {
+      try {
+        const response = await axiosInstance.get('/health');
+        console.log('Health check response:', response.data);
+        return response.data?.status === 'ok';
+      } catch (err) {
+        console.error(`Backend health check attempt ${i + 1} failed:`, err);
+        if (i < retries - 1) {
+          await new Promise(resolve => setTimeout(resolve, 2000)); // 2秒待機
+        }
+      }
+    }
+    return false;
+  };
+
   useEffect(() => {
-    const autoLogin = async () => {
-      if (process.env.NODE_ENV === 'development' && !autoLoginAttempted) {
+    const attemptAutoLogin = async () => {
+      if (!autoLoginAttempted) {
         setAutoLoginAttempted(true);
         try {
-          const response = await login({ username: 'mockuser', password: 'mockpass' });
-          if (response.status === 'success') {
-            navigate('/');
+          console.log('Attempting to check backend health...');
+          const isBackendAlive = await checkBackendHealth();
+          if (!isBackendAlive) {
+            console.error('Backend health check failed');
+            setError('サーバーに接続できません。しばらく待ってから再試行してください。');
+            return;
           }
-        } catch (err) {
-          // 自動ログインに失敗した場合は手動ログインを許可
-          console.error('自動ログインに失敗しました:', err);
+
+          if (process.env.NODE_ENV === 'development') {
+            console.log('Attempting auto-login...');
+            const response = await login({ username: 'mockuser', password: 'mockpass' });
+            if (response.status === 'success') {
+              navigate('/');
+            }
+          }
+        } catch (err: any) {
+          console.error('Auto-login failed:', err);
+          setError(err.response?.data?.message || 'サーバーに接続できません。しばらく待ってから再試行してください。');
         }
       }
     };
 
-    // 遅延を入れて自動ログインを実行
-    const timer = setTimeout(autoLogin, 1000);
-    return () => clearTimeout(timer);
+    attemptAutoLogin();
   }, [login, navigate, autoLoginAttempted]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!username || !password) {
+      setError('ユーザー名とパスワードを入力してください');
+      return;
+    }
+    
     setError(null);
     setLoading(true);
 
@@ -54,41 +86,47 @@ const Login = () => {
       } else {
         setError(response.message || 'ログインに失敗しました');
       }
-    } catch (err) {
-      setError('認証エラーが発生しました');
+    } catch (err: any) {
+      setError(err.response?.data?.message || '認証エラーが発生しました');
     } finally {
       setLoading(false);
     }
   };
 
-  // 開発環境の場合は自動ログインのメッセージを表示
   const isDevelopment = process.env.NODE_ENV === 'development';
 
   return (
     <Container component="main" maxWidth="sm">
-      <Box
-        sx={{
-          marginTop: 8,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-        }}
-      >
+      <Box sx={{ marginTop: 8, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <Paper elevation={3} sx={{ p: 4, width: '100%' }}>
           <Typography component="h1" variant="h5" align="center" gutterBottom>
             IT運用システム ログイン
           </Typography>
+          
           {error && (
             <Alert severity="error" sx={{ mb: 2 }}>
               {error}
             </Alert>
           )}
-          {isDevelopment && (
+
+          {isDevelopment && !autoLoginAttempted && (
             <Alert severity="info" sx={{ mb: 2 }}>
-              開発環境では自動的にモックユーザーでログインを試みています...
+              バックエンド接続を確認中...
+              <Box sx={{ display: 'flex', justifyContent: 'center', mt: 1 }}>
+                <CircularProgress size={20} />
+              </Box>
             </Alert>
           )}
-          <form onSubmit={handleSubmit}>
+
+          {isDevelopment && autoLoginAttempted && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              開発環境用のモックユーザー:<br />
+              ユーザー名: mockuser<br />
+              パスワード: mockpass
+            </Alert>
+          )}
+
+          <form onSubmit={handleSubmit} noValidate>
             <TextField
               margin="normal"
               required
@@ -122,7 +160,14 @@ const Login = () => {
               sx={{ mt: 3, mb: 2 }}
               disabled={loading}
             >
-              {loading ? 'ログイン中...' : 'ログイン'}
+              {loading ? (
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <CircularProgress size={20} sx={{ mr: 1 }} />
+                  ログイン中...
+                </Box>
+              ) : (
+                'ログイン'
+              )}
             </Button>
           </form>
         </Paper>

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { AuthState, User, LoginFormData, ApiResponse } from '../types/api';
+import { AuthState, User, LoginFormData, ApiResponse, AuthResponse } from '../types/api';
 import { authApi } from '../services/api';
 
 interface AuthContextType {
@@ -7,7 +7,7 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   error: string | null;
-  login: (credentials: LoginFormData) => Promise<ApiResponse<AuthState>>;
+  login: (credentials: LoginFormData) => Promise<ApiResponse<AuthResponse>>;
   logout: () => Promise<void>;
   getCurrentUser: () => Promise<User | null>;
 }
@@ -24,7 +24,7 @@ const AuthContext = createContext<AuthContextType>({
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, setState] = useState<AuthState>({
-    isAuthenticated: Boolean(localStorage.getItem('token')), // トークンの存在で初期認証状態を設定
+    isAuthenticated: Boolean(localStorage.getItem('token')),
     user: null,
     token: localStorage.getItem('token'),
     loading: true,
@@ -52,7 +52,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           loading: false,
         }));
       } catch (error) {
-        localStorage.removeItem('token'); // エラー時はトークンを削除
+        localStorage.removeItem('token');
         setState(prev => ({
           ...prev,
           loading: false,
@@ -69,12 +69,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setState(prev => ({ ...prev, loading: true, error: null }));
     try {
       const response = await authApi.login(credentials);
-      if (response.status === 'success' && response.data?.user) {
+      if (response?.status === 'success' && response?.data) {
+        const authData = response.data;
         setState(prev => ({
           ...prev,
           isAuthenticated: true,
-          user: response.data.user,
-          token: response.data.token,
+          user: {
+            id: authData.user.username,
+            username: authData.user.username,
+            displayName: authData.user.displayName,
+            email: authData.user.email,
+            roles: authData.user.groups,
+          },
+          token: authData.token,
           loading: false,
           error: null,
         }));
@@ -99,7 +106,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await authApi.logout();
     } finally {
-      // エラーが発生しても状態をクリアする
       setState({
         isAuthenticated: false,
         user: null,

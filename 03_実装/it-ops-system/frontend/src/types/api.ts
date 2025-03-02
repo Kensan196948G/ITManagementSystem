@@ -102,6 +102,16 @@ export interface User {
 }
 
 // 認証状態型定義
+export interface AuthResponse {
+  token: string;
+  user: {
+    username: string;
+    displayName: string;
+    email: string;
+    groups: string[];
+  };
+}
+
 export interface AuthState {
   isAuthenticated: boolean;
   user: User | null;

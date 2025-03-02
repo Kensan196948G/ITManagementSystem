@@ -2,9 +2,8 @@ import express from 'express';
 import compression from 'compression';
 import morgan from 'morgan';
 import { config } from 'dotenv';
+import cors from 'cors';
 import { requestLogger, errorLogger, errorHandler } from './middleware/errorHandling';
-
-// ルーターのインポート
 import authRouter from './routes/auth';
 import systemRouter from './routes/system';
 import monitoringRouter from './routes/monitoring';
@@ -37,16 +36,27 @@ try {
   process.exit(1);
 }
 
-// ミドルウェアの設定
+// 基本的なミドルウェアの設定（CORSを最初に）
+app.use(cors({
+  origin: isDevelopment ? 'http://localhost:3000' : process.env.CORS_ORIGIN,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+
 app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(morgan('combined'));
+app.use(morgan(isDevelopment ? 'dev' : 'combined'));
 app.use(requestLogger);
 
-// 基本的なヘルスチェックエンドポイント
+// ヘルスチェックエンドポイントを最初に定義
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', mode: isDevelopment ? 'development' : 'production' });
+  res.json({ 
+    status: 'ok', 
+    mode: isDevelopment ? 'development' : 'production',
+    timestamp: new Date().toISOString()
+  });
 });
 
 // ルートパスに対する基本的なレスポンス
@@ -73,7 +83,7 @@ app.use(errorLogger);
 app.use(errorHandler);
 
 // サーバー起動
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3002;
 const server = app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
   console.log(`API documentation available at http://localhost:${PORT}/api/health`);

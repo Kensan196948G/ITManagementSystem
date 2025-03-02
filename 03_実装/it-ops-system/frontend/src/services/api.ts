@@ -1,16 +1,22 @@
 import axios from 'axios';
-import { ApiResponse, AuthState, User, LoginFormData, Alert, LogEntry } from '../types/api';
+import { ApiResponse, AuthState, User, LoginFormData, Alert, LogEntry, AuthResponse } from '../types/api';
 
-// REACT_APP_API_URLが設定されていない場合は3002ポートを使用
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3002/api';
+// 開発環境の判定
+const isDevelopment = process.env.NODE_ENV === 'development';
 
-// axiosInstanceの設定でwithCredentialsをfalseに変更（CORSエラー防止）
+// 開発環境ではプロキシ設定を使用するため、相対パスを使用
+const API_BASE_URL = '/api';
+
 export const axiosInstance = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: false,
+  withCredentials: true,
+  timeout: 5000, // 5秒タイムアウト
+  validateStatus: (status) => {
+    return status >= 200 && status < 500; // 500エラーのみ例外として扱う
+  },
 });
 
 // リクエストインターセプター
@@ -19,6 +25,9 @@ axiosInstance.interceptors.request.use(
     const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+    if (isDevelopment) {
+      console.log(`[DEV] Requesting: ${config.method?.toUpperCase()} ${config.url}`);
     }
     return config;
   },
@@ -29,8 +38,16 @@ axiosInstance.interceptors.request.use(
 
 // レスポンスインターセプター
 axiosInstance.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (isDevelopment) {
+      console.log(`[DEV] Response from ${response.config.url}:`, response.data);
+    }
+    return response;
+  },
   async (error) => {
+    if (isDevelopment) {
+      console.error(`[DEV] API Error:`, error);
+    }
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       window.location.href = '/login';
@@ -40,18 +57,19 @@ axiosInstance.interceptors.response.use(
 );
 
 export const authApi = {
-  async login(credentials: LoginFormData): Promise<ApiResponse<AuthState>> {
-    const endpoint = process.env.NODE_ENV === 'development' 
-      ? '/auth/dev/login' 
-      : '/auth/login';
-    
-    const response = await axiosInstance.post<ApiResponse<AuthState>>(endpoint, credentials);
-    if (response.data.data?.token) {
-      localStorage.setItem('token', response.data.data.token);
-      // トークンをセットしたら、レスポンスヘッダーも更新
-      axiosInstance.defaults.headers.common['Authorization'] = `Bearer ${response.data.data.token}`;
+  async login(credentials: LoginFormData): Promise<ApiResponse<AuthResponse>> {
+    const endpoint = isDevelopment ? '/auth/dev/login' : '/auth/login';
+    try {
+      const response = await axiosInstance.post<ApiResponse<AuthResponse>>(endpoint, credentials);
+      if (response.data?.data?.token) {
+        localStorage.setItem('token', response.data.data.token);
+        axiosInstance.defaults.headers.common['Authorization'] = `Bearer ${response.data.data.token}`;
+      }
+      return response.data;
+    } catch (error) {
+      console.error('Login error:', error);
+      throw error;
     }
-    return response.data;
   },
 
   async logout(): Promise<void> {

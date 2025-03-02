@@ -185,15 +185,26 @@ router.post('/login', loginLimiter, async (req, res, next) => {
 });
 
 // モック認証用エンドポイント（開発環境のみ）
-router.post('/dev/login', devLoginLimiter, async (req, res, next) => {
-  if (process.env.NODE_ENV !== 'development' || process.env.AUTH_MODE !== 'mock') {
-    return res.status(404).json({
-      status: 'error',
-      message: 'This endpoint is only available in development mode with mock authentication'
-    });
-  }
-
+router.post('/dev/login', async (req, res, next) => {
   try {
+    // 開発環境でない場合は404を返す
+    if (process.env.NODE_ENV !== 'development' || process.env.AUTH_MODE !== 'mock') {
+      return res.status(404).json({
+        status: 'error',
+        message: 'This endpoint is only available in development mode'
+      });
+    }
+
+    const { username, password } = req.body;
+
+    // モックユーザーの認証情報を検証
+    if (username !== 'mockuser' || password !== 'mockpass') {
+      return res.status(401).json({
+        status: 'error',
+        message: 'Invalid credentials'
+      });
+    }
+
     const mockUser = {
       id: 'mock-user-001',
       username: 'mockuser',
@@ -205,6 +216,10 @@ router.post('/dev/login', devLoginLimiter, async (req, res, next) => {
 
     const token = generateToken(mockUser);
 
+    // セッション管理を追加
+    await TokenManager.addUserSession(mockUser.id);
+
+    // レスポンスを返す
     res.json({
       status: 'success',
       data: {
