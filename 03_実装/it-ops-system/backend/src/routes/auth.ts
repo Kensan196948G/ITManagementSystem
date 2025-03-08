@@ -11,6 +11,7 @@ import rateLimit from 'express-rate-limit';
 import { PermissionService } from '../services/permissionService';
 import { AuthService } from '../services/authService';
 import LoggingService from '../services/loggingService';
+import { requireAuthLevel, requireGlobalAdmin, AuthorizationLevel } from '../middleware/authorization';
 
 // 環境変数の読み込み
 config();
@@ -358,20 +359,33 @@ router.post('/force-logout', verifyToken, async (req, res) => {
   }
 });
 
+/**
+ * 権限チェックAPI - 特定のリソースに対するアクセス権をチェック
+ */
 router.post('/check-permission', async (req, res) => {
   try {
     const { userEmail, check } = req.body;
-    const hasPermission = await permissionService.checkPermission(userEmail, check);
+    const hasPermission = await permissionService.checkPermission(
+      userEmail, 
+      check.resource, 
+      check.action
+    );
     res.json({ hasPermission });
   } catch (error) {
     logger.logError(error as Error, {
       context: 'PermissionAPI',
       message: '権限チェックエラー'
     });
-    res.status(500).json({ error: '権限チェック中にエラーが発生しました' });
+    res.status(500).json({ 
+      status: 'error', 
+      message: '権限チェック中にエラーが発生しました' 
+    });
   }
 });
 
+/**
+ * ユーザーロール情報取得API - ユーザーのロールと権限情報を返す
+ */
 router.get('/user-roles/:email', async (req, res) => {
   try {
     const { email } = req.params;
@@ -382,10 +396,16 @@ router.get('/user-roles/:email', async (req, res) => {
       context: 'PermissionAPI',
       message: 'ユーザーロール取得エラー'
     });
-    res.status(500).json({ error: 'ユーザーロールの取得中にエラーが発生しました' });
+    res.status(500).json({ 
+      status: 'error', 
+      message: 'ユーザーロールの取得中にエラーが発生しました' 
+    });
   }
 });
 
+/**
+ * アクセス検証API - 特定の権限に対するアクセス権をチェック
+ */
 router.post('/validate-access', async (req, res) => {
   try {
     const { userEmail, permission } = req.body;
@@ -396,8 +416,102 @@ router.post('/validate-access', async (req, res) => {
       context: 'PermissionAPI',
       message: 'アクセス検証エラー'
     });
-    res.status(500).json({ error: 'アクセス検証中にエラーが発生しました' });
+    res.status(500).json({ 
+      status: 'error', 
+      message: 'アクセス検証中にエラーが発生しました' 
+    });
   }
+});
+
+/**
+ * グローバル管理者チェックAPI - ユーザーがグローバル管理者かどうかを確認
+ * フロントエンドの authApi.isGlobalAdmin() 関数に対応
+ */
+router.get('/check-global-admin/:email', async (req, res) => {
+  try {
+    const { email } = req.params;
+    const isGlobalAdmin = await authService.isGlobalAdmin(email);
+    res.json({ 
+      isGlobalAdmin,
+      status: 'success'
+    });
+  } catch (error) {
+    logger.logError(error as Error, {
+      context: 'AuthAPI',
+      message: 'グローバル管理者チェックエラー',
+      email: req.params.email
+    });
+    res.status(500).json({ 
+      status: 'error', 
+      message: 'グローバル管理者チェック中にエラーが発生しました',
+      isGlobalAdmin: false
+    });
+  }
+});
+
+/**
+ * Microsoft権限チェックAPI - ユーザーのMicrosoft Graph API権限を確認
+ * フロントエンドの authApi.checkMicrosoftPermissions() 関数に対応
+ */
+router.get('/ms-permissions/:email', verifyToken, async (req, res) => {
+  try {
+    const { email } = req.params;
+    
+    // 権限チェック - 自分自身のアカウントの場合はOK、それ以外はグローバル管理者が必要
+    const userInfo = await permissionService.getUserInfo(req.user?.id || '');
+    if (userInfo?.email !== email) {
+      const isAdmin = await authService.isGlobalAdmin(userInfo?.email || '');
+      if (!isAdmin) {
+        return res.status(403).json({
+          status: 'error',
+          message: '他のユーザーの権限情報を確認するにはグローバル管理者権限が必要です'
+        });
+      }
+    }
+    
+    // Microsoft権限情報を取得
+    const msPermissions = await authService.getMicrosoftPermissions(email);
+    res.json({
+      status: msPermissions.status,
+      permissions: msPermissions.permissions,
+      missingPermissions: msPermissions.missingPermissions,
+      accountStatus: msPermissions.accountStatus,
+      roles: msPermissions.roles
+    });
+  } catch (error) {
+    logger.logError(error as Error, {
+      context: 'AuthAPI',
+      message: 'Microsoft権限チェックエラー',
+      email: req.params.email
+    });
+    res.status(500).json({ 
+      status: 'error', 
+      message: 'Microsoft権限確認中にエラーが発生しました'
+    });
+  }
+});
+
+/**
+ * 権限レベルによるアクセス制御をテストするエンドポイント
+ * グローバル管理者のみがアクセス可能
+ */
+router.get('/admin-only', verifyToken, requireAuthLevel(AuthorizationLevel.GLOBAL_ADMIN_ONLY), (req, res) => {
+  res.json({
+    status: 'success',
+    message: 'グローバル管理者専用のAPIにアクセスしました',
+    isAdmin: true
+  });
+});
+
+/**
+ * 権限レベルによるアクセス制御をテストするエンドポイント
+ * 管理者権限を持つユーザーがアクセス可能
+ */
+router.get('/admin-role', verifyToken, requireAuthLevel(AuthorizationLevel.ADMIN_ROLE), (req, res) => {
+  res.json({
+    status: 'success',
+    message: '管理者権限を持つユーザー専用のAPIにアクセスしました'
+  });
 });
 
 // エラーハンドリングの適用

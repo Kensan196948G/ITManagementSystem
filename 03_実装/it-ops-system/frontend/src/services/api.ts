@@ -89,9 +89,62 @@ export const authApi = {
     }
   },
 
+  // 権限チェックAPIを拡張
   checkPermission: async (params: { userEmail: string; check: { resource: string; action: string } }): Promise<boolean> => {
-    const response = await axiosInstance.post('/check-permission', params);
-    return response.data.allowed;
+    try {
+      const response = await axiosInstance.post('/auth/check-permission', params);
+      return response.data.hasPermission || false;
+    } catch (error) {
+      console.error('Permission check failed:', error);
+      return false;
+    }
+  },
+
+  // ユーザーのロールと権限情報を取得
+  getUserRoles: async (email: string) => {
+    try {
+      const response = await axiosInstance.get(`/auth/user-roles/${email}`);
+      return {
+        isGlobalAdmin: response.data.isGlobalAdmin || false,
+        roles: response.data.roles || [],
+        userGroups: response.data.userGroups || []
+      };
+    } catch (error) {
+      console.error('Failed to fetch user roles:', error);
+      return { isGlobalAdmin: false, roles: [], userGroups: [] };
+    }
+  },
+
+  // Microsoftアカウントの権限状態を確認
+  checkMicrosoftPermissions: async (email: string) => {
+    try {
+      const response = await axiosInstance.get(`/auth/ms-permissions/${email}`);
+      return {
+        status: response.data.status,
+        permissions: response.data.permissions || [],
+        missingPermissions: response.data.missingPermissions || [],
+        accountStatus: response.data.accountStatus || 'unknown'
+      };
+    } catch (error) {
+      console.error('Failed to check Microsoft permissions:', error);
+      return { 
+        status: 'error', 
+        permissions: [], 
+        missingPermissions: [],
+        accountStatus: 'error'
+      };
+    }
+  },
+
+  // グローバル管理者かどうかを確認
+  isGlobalAdmin: async (email: string): Promise<boolean> => {
+    try {
+      const response = await axiosInstance.get(`/auth/check-global-admin/${email}`);
+      return response.data.isGlobalAdmin || false;
+    } catch (error) {
+      console.error('Failed to check global admin status:', error);
+      return false;
+    }
   }
 };
 
@@ -148,13 +201,38 @@ export const roleApi = {
 };
 
 export const m365Api = {
-  async getLicenses() {
-    const response = await axiosInstance.get('/m365/licenses');
-    return response.data;
+  // 権限レベルに応じたフィルタリングを追加
+  async getLicenses(isAdmin: boolean = false) {
+    try {
+      const params = isAdmin ? { view: 'full' } : { view: 'limited' };
+      const response = await axiosInstance.get('/m365/licenses', { params });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch licenses:', error);
+      throw error;
+    }
   },
 
-  async getUsers() {
-    const response = await axiosInstance.get('/m365/users');
-    return response.data;
+  // 権限レベルに応じたフィルタリングを追加
+  async getUsers(isAdmin: boolean = false) {
+    try {
+      const params = isAdmin ? { view: 'full' } : { view: 'limited' };
+      const response = await axiosInstance.get('/m365/users', { params });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch users:', error);
+      throw error;
+    }
+  },
+
+  // グローバル管理者専用API
+  async getGlobalAdminInfo() {
+    try {
+      const response = await axiosInstance.get('/admin/global-admin-info');
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch global admin info:', error);
+      throw error;
+    }
   }
 };

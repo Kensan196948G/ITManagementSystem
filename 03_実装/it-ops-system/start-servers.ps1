@@ -52,7 +52,7 @@ Clear-Port -Port 3002
 Write-Host "Starting Backend Server..." -ForegroundColor Cyan
 $backendPath = Join-Path -Path $scriptPath -ChildPath "backend"
 if (Test-Path $backendPath) {
-    $backendProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c cd `"$backendPath`" && npm run dev" -PassThru -WindowStyle Normal
+    $backendProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c cd `"$backendPath`" ; npm run dev" -PassThru -WindowStyle Normal
     Write-Host "Backend server starting with PID: $($backendProcess.Id)" -ForegroundColor Green
     
     # バックエンドの起動を待機
@@ -88,7 +88,7 @@ if (Test-Path $backendPath) {
 Write-Host "Starting Frontend Server..." -ForegroundColor Cyan
 $frontendPath = Join-Path -Path $scriptPath -ChildPath "frontend"
 if (Test-Path $frontendPath) {
-    $frontendProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c cd `"$frontendPath`" && npm run dev" -PassThru -WindowStyle Normal
+    $frontendProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c cd `"$frontendPath`" ; npm run dev" -PassThru -WindowStyle Normal
     Write-Host "Frontend server starting with PID: $($frontendProcess.Id)" -ForegroundColor Green
 } else {
     Write-Host "Frontend directory not found at: $frontendPath" -ForegroundColor Red

@@ -1,7 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { PermissionCheck } from '../components/PermissionCheck';
 import Dashboard from '../pages/Dashboard';
 import Settings from '../pages/Settings';
 import Security from '../pages/Security';
@@ -10,6 +9,8 @@ import Users from '../pages/Users';
 import Login from '../pages/Login';
 import { GraphAPIPermissionCheck } from '../components/admin/GraphAPIPermissionCheck';
 import { AppLayout } from '../components/AppLayout';
+import { AuthorizedContent } from '../components/AuthorizedContent';
+import { AuthorizationLevel, ResourcePermissions } from '../constants/permissions';
 
 export const AppRouter = () => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -64,9 +65,12 @@ export const AppRouter = () => {
               <Navigate to="/login" replace />
             ) : (
               <AppLayout>
-                <PermissionCheck resource="metrics" action="read">
+                <AuthorizedContent
+                  requiredAuthLevel={AuthorizationLevel.USER_ROLE}
+                  requiredPermission={ResourcePermissions.METRICS.VIEW}
+                >
                   <Metrics />
-                </PermissionCheck>
+                </AuthorizedContent>
               </AppLayout>
             )
           }
@@ -76,9 +80,12 @@ export const AppRouter = () => {
           element={
             isAuthenticated ? (
               <AppLayout>
-                <PermissionCheck resource="metrics" action="write">
+                <AuthorizedContent
+                  requiredAuthLevel={AuthorizationLevel.ADMIN_ROLE}
+                  requiredPermission={ResourcePermissions.METRICS.EDIT}
+                >
                   <Metrics editMode={true} />
-                </PermissionCheck>
+                </AuthorizedContent>
               </AppLayout>
             ) : (
               <Navigate to="/login" />
@@ -94,9 +101,12 @@ export const AppRouter = () => {
               <Navigate to="/login" replace />
             ) : (
               <AppLayout>
-                <PermissionCheck resource="security" action="read">
+                <AuthorizedContent
+                  requiredAuthLevel={AuthorizationLevel.USER_ROLE}
+                  requiredPermission={ResourcePermissions.SECURITY.VIEW}
+                >
                   <Security />
-                </PermissionCheck>
+                </AuthorizedContent>
               </AppLayout>
             )
           } 
@@ -106,9 +116,12 @@ export const AppRouter = () => {
           element={
             isAuthenticated ? (
               <AppLayout>
-                <PermissionCheck resource="security" action="write">
+                <AuthorizedContent
+                  requiredAuthLevel={AuthorizationLevel.ADMIN_ROLE}
+                  requiredPermission={ResourcePermissions.SECURITY.EDIT}
+                >
                   <Security editMode={true} />
-                </PermissionCheck>
+                </AuthorizedContent>
               </AppLayout>
             ) : (
               <Navigate to="/login" />
@@ -124,9 +137,12 @@ export const AppRouter = () => {
               <Navigate to="/login" replace />
             ) : (
               <AppLayout>
-                <PermissionCheck resource="users" action="read">
+                <AuthorizedContent
+                  requiredAuthLevel={AuthorizationLevel.USER_ROLE}
+                  requiredPermission={ResourcePermissions.USERS.VIEW}
+                >
                   <Users />
-                </PermissionCheck>
+                </AuthorizedContent>
               </AppLayout>
             )
           } 
@@ -136,9 +152,12 @@ export const AppRouter = () => {
           element={
             isAuthenticated ? (
               <AppLayout>
-                <PermissionCheck resource="users" action="write">
+                <AuthorizedContent
+                  requiredAuthLevel={AuthorizationLevel.ADMIN_ROLE}
+                  requiredPermission={ResourcePermissions.USERS.EDIT}
+                >
                   <Users editMode={true} />
-                </PermissionCheck>
+                </AuthorizedContent>
               </AppLayout>
             ) : (
               <Navigate to="/login" />
@@ -154,15 +173,18 @@ export const AppRouter = () => {
               <Navigate to="/login" replace />
             ) : (
               <AppLayout>
-                <PermissionCheck resource="system" action="write">
+                <AuthorizedContent
+                  requiredAuthLevel={AuthorizationLevel.ADMIN_ROLE}
+                  requiredPermission={ResourcePermissions.SYSTEM.EDIT}
+                >
                   <Settings />
-                </PermissionCheck>
+                </AuthorizedContent>
               </AppLayout>
             )
           } 
         />
 
-        {/* Graph API パーミッション管理 */}
+        {/* Graph API パーミッション管理 (グローバル管理者専用) */}
         <Route 
           path="/admin/graph-permissions" 
           element={
@@ -170,9 +192,14 @@ export const AppRouter = () => {
               <Navigate to="/login" replace />
             ) : (
               <AppLayout>
-                <GraphAPIPermissionCheck>
-                  {null}
-                </GraphAPIPermissionCheck>
+                <AuthorizedContent
+                  requiredAuthLevel={AuthorizationLevel.GLOBAL_ADMIN_ONLY}
+                  featureId="graph-api-permissions"
+                >
+                  <GraphAPIPermissionCheck>
+                    {null}
+                  </GraphAPIPermissionCheck>
+                </AuthorizedContent>
               </AppLayout>
             )
           } 

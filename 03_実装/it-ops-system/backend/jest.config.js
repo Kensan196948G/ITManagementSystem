@@ -1,5 +1,5 @@
 module.exports = {
-  preset: 'ts-jest',
+  preset: 'ts-jest/presets/default-esm',
   testEnvironment: 'node',
   roots: ['<rootDir>/src'],
   testMatch: [
@@ -14,8 +14,12 @@ module.exports = {
   collectCoverage: true,
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}',
-    '!src/tests/**/*.{ts,tsx}',
-    '!src/**/types/**/*.{ts,tsx}'
+    '!src/tests/**',
+    '!src/**/*.d.ts',
+    '!src/types/**',
+    '!src/config/**',
+    '!src/constants/**',
+    '!src/**/index.ts'
   ],
   coverageReporters: ['json', 'lcov', 'text', 'clover', 'html'],
   coverageThreshold: {
@@ -28,6 +32,8 @@ module.exports = {
   },
   verbose: true,
   testTimeout: 10000,
+  clearMocks: true,
+  restoreMocks: true,
   reporters: [
     'default',
     ['jest-junit', {
@@ -41,11 +47,11 @@ module.exports = {
   ],
   globals: {
     'ts-jest': {
-      tsconfig: 'tsconfig.json'
+      tsconfig: 'tsconfig.test.json',
+      diagnostics: true,
+      useESM: true
     }
   },
-  testPathIgnorePatterns: ['/node_modules/', '/dist/'],
-  moduleNameMapper: {
-    '^@/(.*)$': '<rootDir>/src/$1'
-  }
+  extensionsToTreatAsEsm: ['.ts'],
+  testPathIgnorePatterns: ['/node_modules/', '/dist/']
 };
