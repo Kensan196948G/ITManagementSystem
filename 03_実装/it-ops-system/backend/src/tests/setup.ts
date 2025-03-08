@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { UserPayload } from '../types/custom';
+import { jest } from '@jest/globals';
 
 // テスト環境のセットアップ
 process.env.NODE_ENV = 'test';
@@ -10,21 +11,15 @@ process.env.SQLITE_DB_PATH = ':memory:';
 process.env.REDIS_URL = 'mock://localhost:6379';
 
 // グローバルなモック設定
-import { jest } from '@jest/globals';
-import nodemailer from 'nodemailer';
-import type { Transport, TransportOptions, SentMessageInfo } from 'nodemailer';
-import { WebClient } from '@slack/web-api';
+jest.setTimeout(30000);
 
 // メール送信モックの設定
-jest.mock('nodemailer');
-const mockedNodemailer = jest.mocked(nodemailer);
-
-const mockTransport = {
-  sendMail: jest.fn<Promise<SentMessageInfo>, [any]>(),
-  verify: jest.fn<Promise<boolean>, []>()
-} as unknown as Transport<unknown>;
-
-mockedNodemailer.createTransport.mockImplementation(() => mockTransport);
+jest.mock('nodemailer', () => ({
+  createTransport: jest.fn().mockReturnValue({
+    sendMail: jest.fn().mockResolvedValue({ messageId: 'mocked-message-id' }),
+    verify: jest.fn().mockResolvedValue(true)
+  })
+}));
 
 // Slackクライアントモックの設定
 jest.mock('@slack/web-api', () => ({
@@ -34,9 +29,6 @@ jest.mock('@slack/web-api', () => ({
     }
   }))
 }));
-
-// タイムアウト設定の変更（デフォルト5秒→30秒）
-jest.setTimeout(30000);
 
 // テスト環境の初期化を保証
 beforeAll(async () => {
@@ -109,6 +101,9 @@ beforeEach(async () => {
     const db = SQLiteService.getInstance();
     await db.exec('DELETE FROM permission_audit_reviews');
     await db.exec('DELETE FROM permission_audit');
+    
+    // モックのリセット
+    jest.clearAllMocks();
   } catch (error) {
     console.error('Table cleanup failed:', error);
     throw error;

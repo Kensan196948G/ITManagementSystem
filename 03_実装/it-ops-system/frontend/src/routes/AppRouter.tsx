@@ -7,6 +7,9 @@ import Security from '../pages/Security';
 import Metrics from '../pages/Metrics';
 import Users from '../pages/Users';
 import Login from '../pages/Login';
+import GraphPermissionDashboard from '../pages/GraphPermissionDashboard';
+import UserPermissionView from '../pages/UserPermissionView';
+import UserPermissionManagement from '../pages/UserPermissionManagement';
 import { GraphAPIPermissionCheck } from '../components/admin/GraphAPIPermissionCheck';
 import { AppLayout } from '../components/AppLayout';
 import { AuthorizedContent } from '../components/AuthorizedContent';
@@ -199,6 +202,60 @@ export const AppRouter = () => {
                   <GraphAPIPermissionCheck>
                     {null}
                   </GraphAPIPermissionCheck>
+                </AuthorizedContent>
+              </AppLayout>
+            )
+          } 
+        />
+
+        {/* 新規追加: IT運用情報ダッシュボード (一般ユーザー向け) */}
+        <Route 
+          path="/graph-permissions/dashboard" 
+          element={
+            !isAuthenticated ? (
+              <Navigate to="/login" replace />
+            ) : (
+              <AppLayout>
+                <AuthorizedContent
+                  requiredAuthLevel={AuthorizationLevel.AUTHENTICATED}
+                >
+                  <GraphPermissionDashboard />
+                </AuthorizedContent>
+              </AppLayout>
+            )
+          } 
+        />
+
+        {/* 新規追加: 自分のパーミッション一覧表示 (一般ユーザー向け) */}
+        <Route 
+          path="/graph-permissions/my-permissions" 
+          element={
+            !isAuthenticated ? (
+              <Navigate to="/login" replace />
+            ) : (
+              <AppLayout>
+                <AuthorizedContent
+                  requiredAuthLevel={AuthorizationLevel.AUTHENTICATED}
+                >
+                  <UserPermissionView />
+                </AuthorizedContent>
+              </AppLayout>
+            )
+          } 
+        />
+
+        {/* 新規追加: パーミッション管理画面 (グローバル管理者向け) */}
+        <Route 
+          path="/graph-permissions/manage" 
+          element={
+            !isAuthenticated ? (
+              <Navigate to="/login" replace />
+            ) : (
+              <AppLayout>
+                <AuthorizedContent
+                  requiredAuthLevel={AuthorizationLevel.GLOBAL_ADMIN_ONLY}
+                >
+                  <UserPermissionManagement />
                 </AuthorizedContent>
               </AppLayout>
             )

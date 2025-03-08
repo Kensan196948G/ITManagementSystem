@@ -14,6 +14,7 @@ import adRouter from './routes/ad';
 import m365Router from './routes/m365';
 import adminRouter from './routes/admin';
 import metricsRouter from './routes/metrics';
+import graphPermissionsRouter from './routes/graphPermissions';
 import { SQLiteService } from './services/sqliteService';
 import { TokenManager } from './services/tokenManager';
 import app from './app';
@@ -79,6 +80,7 @@ apiRouter.use('/ad', adRouter);
 apiRouter.use('/m365', m365Router);
 apiRouter.use('/admin', adminRouter);
 apiRouter.use('/metrics', metricsRouter);
+apiRouter.use('/graph-permissions', graphPermissionsRouter);
 
 // APIルーターをマウント
 app.use('/api', apiRouter);
