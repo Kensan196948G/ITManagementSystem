@@ -80,13 +80,18 @@ class LoggingService {
   }
 
   public logSecurity(data: {
-    userId: string;
-    event: string;
-    severity: 'low' | 'medium' | 'high' | 'critical';
-    details: any;
+    userId?: string;
+    userEmail?: string;
+    event?: string;
+    message?: string;
+    severity?: 'low' | 'medium' | 'high' | 'critical';
+    details?: any;
+    context?: string;
+    [key: string]: any;
   }) {
     this.logger.warn('Security Event', {
       type: 'security',
+      severity: data.severity || 'medium',
       ...data,
       timestamp: new Date()
     });
@@ -118,11 +123,34 @@ class LoggingService {
     });
   }
 
-  public logInfo(message: string, metadata?: any) {
-    this.logger.info(message, {
-      ...metadata,
-      timestamp: new Date()
-    });
+  public logInfo(messageOrData: string | { message: string; context?: string; [key: string]: any }, metadata?: any) {
+    if (typeof messageOrData === 'string') {
+      this.logger.info(messageOrData, {
+        ...metadata,
+        timestamp: new Date()
+      });
+    } else {
+      const { message, ...rest } = messageOrData;
+      this.logger.info(message, {
+        ...rest,
+        timestamp: new Date()
+      });
+    }
+  }
+
+  public logWarn(messageOrData: string | { message: string; context?: string; [key: string]: any }, metadata?: any) {
+    if (typeof messageOrData === 'string') {
+      this.logger.warn(messageOrData, {
+        ...metadata,
+        timestamp: new Date()
+      });
+    } else {
+      const { message, ...rest } = messageOrData;
+      this.logger.warn(message, {
+        ...rest,
+        timestamp: new Date()
+      });
+    }
   }
 
   public async queryLogs(

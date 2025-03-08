@@ -1,8 +1,32 @@
 import { SecurityAuditService } from '../securityAuditService';
 import { SQLiteService } from '../sqliteService';
-import { MetricsService } from '../metricsService';
-import { LoggingService } from '../loggingService';
-import { AuditEntry, AccessAttempt } from '../../types/audit';
+import LoggingService from '../loggingService';
+
+// AuditMetricsService のモック
+class MockMetricsService {
+  createHistogram = jest.fn();
+  createCounter = jest.fn();
+  observeHistogram = jest.fn();
+  getInstance = jest.fn().mockReturnThis();
+}
+
+// AuditLogEntry と AccessAttempt インターフェースを直接定義
+interface AuditLogEntry {
+  userId: string;
+  action: string;
+  resource: string;
+  timestamp: number;
+  success: boolean;
+  details?: Record<string, any>;
+}
+
+interface AccessAttempt {
+  userId: string;
+  resource: string;
+  timestamp: number;
+  success: boolean;
+  ipAddress: string;
+}
 
 jest.mock('../sqliteService');
 jest.mock('../metricsService');
@@ -11,7 +35,7 @@ jest.mock('../loggingService');
 describe('SecurityAuditService', () => {
   let securityAuditService: SecurityAuditService;
   let mockSQLite: jest.Mocked<SQLiteService>;
-  let mockMetrics: jest.Mocked<MetricsService>;
+  let mockMetrics: jest.Mocked<MockMetricsService>;
   let mockLogger: jest.Mocked<LoggingService>;
 
   beforeEach(() => {
@@ -37,7 +61,7 @@ describe('SecurityAuditService', () => {
     } as any;
 
     (SQLiteService as any).getInstance = jest.fn().mockReturnValue(mockSQLite);
-    (MetricsService as any).getInstance = jest.fn().mockReturnValue(mockMetrics);
+    (MockMetricsService as any).getInstance = jest.fn().mockReturnValue(mockMetrics);
     (LoggingService as any).getInstance = jest.fn().mockReturnValue(mockLogger);
 
     securityAuditService = SecurityAuditService.getInstance();
@@ -57,7 +81,7 @@ describe('SecurityAuditService', () => {
 
   describe('logAuditEvent', () => {
     it('監査イベントを記録できること', async () => {
-      const entry: AuditEntry = {
+      const entry: AuditLogEntry = {
         userId: 'user123',
         action: 'login',
         resource: 'system',
@@ -72,7 +96,7 @@ describe('SecurityAuditService', () => {
     });
 
     it('失敗した監査イベントを適切に処理すること', async () => {
-      const entry: AuditEntry = {
+      const entry: AuditLogEntry = {
         userId: 'user123',
         action: 'login',
         resource: 'system',
@@ -82,13 +106,13 @@ describe('SecurityAuditService', () => {
       };
 
       await securityAuditService.logAuditEvent(entry);
-      expect(mockLogger.logWarn).toHaveBeenCalled();
+      expect(mockLogger.logSecurity).toHaveBeenCalled();
     });
 
     it('エラー発生時に適切に処理すること', async () => {
       mockSQLite.run.mockRejectedValueOnce(new Error('Database error'));
 
-      const entry: AuditEntry = {
+      const entry: AuditLogEntry = {
         userId: 'user123',
         action: 'login',
         resource: 'system',
@@ -126,7 +150,7 @@ describe('SecurityAuditService', () => {
       };
 
       await securityAuditService.logAccessAttempt(attempt);
-      expect(mockLogger.logWarn).toHaveBeenCalled();
+      expect(mockLogger.logSecurity).toHaveBeenCalled();
     });
   });
 

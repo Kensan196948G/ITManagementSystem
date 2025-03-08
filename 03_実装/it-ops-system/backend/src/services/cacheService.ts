@@ -199,15 +199,17 @@ export class CacheService {
    * @param ttl 有効期限（秒）
    */
   public mset<T>(keyValuePairs: Record<string, T>, ttl?: number): boolean {
-    const pairs: { key: string; val: T; ttl?: number }[] = Object.entries(keyValuePairs).map(
-      ([key, value]) => ({
-        key,
-        val: value,
-        ttl
-      })
-    );
+    let success = true;
     
-    return this.cache.mset(pairs);
+    // 複数のキーと値のペアを個別にsetメソッドで設定
+    for (const [key, value] of Object.entries(keyValuePairs)) {
+      const result = this.set(key, value, ttl);
+      if (!result) {
+        success = false;
+      }
+    }
+    
+    return success;
   }
 
   /**

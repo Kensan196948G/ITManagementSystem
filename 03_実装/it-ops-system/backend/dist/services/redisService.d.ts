@@ -1,13 +1,4 @@
 import Redis from 'ioredis';
-declare module 'ioredis' {
-    type RedisStatus = 'wait' | 'reconnecting' | 'connecting' | 'connect' | 'ready' | 'close' | 'end';
-    interface Redis {
-        status: RedisStatus;
-        ping(): Promise<string>;
-        quit(): Promise<'OK'>;
-        info(section: string): Promise<string>;
-    }
-}
 export declare class RedisService {
     private static instance;
     private client;
@@ -17,10 +8,15 @@ export declare class RedisService {
     private hits;
     private totalRequests;
     private cacheHitRatioGauge;
+    private isUsingMock;
+    private mockData;
     private constructor();
+    private setupMockRedis;
     private setupMonitoring;
     static getInstance(): RedisService;
     getClient(): Redis;
+    shutdown(): Promise<void>;
+    isUsingMockImplementation(): boolean;
     healthCheck(): Promise<boolean>;
     disconnect(): Promise<void>;
     updateCacheMetrics(hit: boolean): void;
@@ -28,6 +24,8 @@ export declare class RedisService {
     set(key: string, value: string, expirationSeconds?: number): Promise<boolean>;
     get(key: string): Promise<string | null>;
     del(key: string): Promise<boolean>;
+    delete(key: string): Promise<boolean>;
+    deletePattern(pattern: string): Promise<boolean>;
     isConnected(): Promise<boolean>;
     getCacheHitRatio(): Promise<number>;
     getRetryAttempts(): Promise<number>;

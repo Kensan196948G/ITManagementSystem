@@ -1,0 +1,1 @@
+{"version":3,"file":"autoRecover.d.ts","sourceRoot":"","sources":["../../src/scripts/autoRecover.ts"],"names":[],"mappings":"AAYA,UAAU,cAAc;IACtB,OAAO,EAAE,OAAO,CAAC;IACjB,OAAO,EAAE,MAAM,CAAC;IAChB,YAAY,CAAC,EAAE,MAAM,CAAC;CACvB;AAmID,wBAAsB,WAAW,IAAI,OAAO,CAAC,cAAc,CAAC,CAuD3D;AAED,wBAAsB,eAAe,IAAI,OAAO,CAAC,IAAI,CAAC,CAOrD"}

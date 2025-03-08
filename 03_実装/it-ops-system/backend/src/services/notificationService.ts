@@ -1,8 +1,9 @@
 import WebSocket from 'ws';
 import http from 'http';
 import url from 'url';
-import { AuditLogService } from './auditLogService';
-import { verifyJwt } from '../utils/jwt';
+import { AuditLogService, AuditLogType } from './auditLogService';
+import jwt from 'jsonwebtoken';
+import { config } from '../config';
 
 /**
  * 通知サービス
@@ -15,8 +16,8 @@ export class NotificationService {
   private auditLogService: AuditLogService;
   private initialized: boolean = false;
 
-  private constructor() {
-    this.auditLogService = AuditLogService.getInstance();
+  private constructor(auditLogService: AuditLogService) {
+    this.auditLogService = auditLogService;
     this.wss = new WebSocket.Server({ noServer: true });
     this.initialize();
   }
@@ -24,9 +25,11 @@ export class NotificationService {
   /**
    * シングルトンインスタンスを取得
    */
-  public static getInstance(): NotificationService {
+  public static getInstance(auditLogService?: AuditLogService): NotificationService {
     if (!NotificationService.instance) {
-      NotificationService.instance = new NotificationService();
+      // auditLogServiceが指定されていない場合は、getInstanceSyncを使用
+      const logService = auditLogService || AuditLogService.getInstanceSync();
+      NotificationService.instance = new NotificationService(logService);
     }
     return NotificationService.instance;
   }
@@ -43,10 +46,14 @@ export class NotificationService {
     });
 
     this.initialized = true;
-    this.auditLogService.logInfo({
+    this.auditLogService.log({
       userId: 'system',
-      event: 'NotificationService initialized',
-      details: { timestamp: new Date().toISOString() }
+      action: 'INITIALIZE',
+      type: AuditLogType.SYSTEM_CONFIG_CHANGE,
+      details: {
+        event: 'NotificationService initialized',
+        timestamp: new Date().toISOString()
+      }
     });
   }
 
@@ -76,16 +83,25 @@ export class NotificationService {
       try {
         const data = JSON.parse(message.toString());
         // クライアントからのメッセージ処理（必要に応じて実装）
-        this.auditLogService.logInfo({
+        this.auditLogService.log({
           userId: userEmail,
-          event: 'WebSocket message received',
-          details: { type: data.type }
+          action: 'RECEIVE',
+          type: AuditLogType.SYSTEM_CONFIG_CHANGE,
+          details: {
+            event: 'WebSocket message received',
+            type: data.type
+          }
         });
       } catch (error) {
-        this.auditLogService.logError(error as Error, {
+        this.auditLogService.log({
           userId: userEmail,
-          event: 'WebSocket message parse error',
-          details: { message }
+          action: 'ERROR',
+          type: AuditLogType.SYSTEM_CONFIG_CHANGE,
+          details: {
+            event: 'WebSocket message parse error',
+            error: (error as Error).message,
+            message
+          }
         });
       }
     });
@@ -93,17 +109,25 @@ export class NotificationService {
     // 切断イベントリスナー
     ws.on('close', () => {
       this.removeClient(ws, userEmail);
-      this.auditLogService.logInfo({
+      this.auditLogService.log({
         userId: userEmail,
-        event: 'WebSocket connection closed',
-        details: { timestamp: new Date().toISOString() }
+        action: 'DISCONNECT',
+        type: AuditLogType.SYSTEM_CONFIG_CHANGE,
+        details: {
+          event: 'WebSocket connection closed',
+          timestamp: new Date().toISOString()
+        }
       });
     });
 
-    this.auditLogService.logInfo({
+    this.auditLogService.log({
       userId: userEmail,
-      event: 'WebSocket connection established',
-      details: { timestamp: new Date().toISOString() }
+      action: 'CONNECT',
+      type: AuditLogType.SYSTEM_CONFIG_CHANGE,
+      details: {
+        event: 'WebSocket connection established',
+        timestamp: new Date().toISOString()
+      }
     });
   }
 
@@ -159,10 +183,15 @@ export class NotificationService {
         this.wss.emit('connection', ws, { userEmail });
       });
     } catch (error) {
-      this.auditLogService.logError(error as Error, {
+      this.auditLogService.log({
         userId: 'unknown',
-        event: 'WebSocket upgrade failed',
-        details: { url: request.url }
+        action: 'ERROR',
+        type: AuditLogType.SYSTEM_CONFIG_CHANGE,
+        details: {
+          event: 'WebSocket upgrade failed',
+          error: (error as Error).message,
+          url: request.url
+        }
       });
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
@@ -174,7 +203,15 @@ export class NotificationService {
    * @param token JWTトークン
    */
   private async verifyJwt(token: string): Promise<any> {
-    return verifyJwt(token);
+    return new Promise((resolve, reject) => {
+      jwt.verify(token, config.jwt.secret, (err, decoded) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(decoded as Record<string, any>);
+        }
+      });
+    });
   }
 
   /**
@@ -211,23 +248,28 @@ export class NotificationService {
       }
 
       // 監査ログに記録
-      this.auditLogService.logSecurity({
+      this.auditLogService.log({
         userId: userEmail || 'system',
-        event: 'Notification sent',
-        severity: notification.severity === 'critical' ? 'critical' : 
-                 notification.severity === 'error' ? 'high' : 
-                 notification.severity === 'warning' ? 'medium' : 'low',
+        action: 'NOTIFY',
+        type: AuditLogType.SYSTEM_CONFIG_CHANGE,
         details: {
+          event: 'Notification sent',
+          severity: notification.severity === 'critical' ? 'critical' :
+                   notification.severity === 'error' ? 'high' :
+                   notification.severity === 'warning' ? 'medium' : 'low',
           type: notification.type,
           title: notification.title,
           timestamp
         }
       });
     } catch (error) {
-      this.auditLogService.logError(error as Error, {
+      this.auditLogService.log({
         userId: userEmail || 'system',
-        event: 'Failed to send notification',
+        action: 'ERROR',
+        type: AuditLogType.SYSTEM_CONFIG_CHANGE,
         details: {
+          event: 'Failed to send notification',
+          error: (error as Error).message,
           type: notification.type,
           title: notification.title
         }

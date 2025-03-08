@@ -32,16 +32,54 @@ export class AuditLogService {
   private logger: LoggingService;
 
   private constructor() {
-    this.sqlite = SQLiteService.getInstance();
+    // SQLiteServiceは非同期で初期化するため、getInstanceSyncを使用
+    this.sqlite = SQLiteService.getInstanceSync();
     this.logger = LoggingService.getInstance();
-    this.initializeDatabase();
+    // 初期化は非同期で行うため、コンストラクタでは呼び出さない
   }
 
-  public static getInstance(): AuditLogService {
+  /**
+   * シングルトンインスタンスを取得
+   */
+  public static async getInstance(): Promise<AuditLogService> {
     if (!AuditLogService.instance) {
       AuditLogService.instance = new AuditLogService();
+      // SQLiteServiceが初期化されるのを待ってから初期化
+      await AuditLogService.instance.initialize();
     }
     return AuditLogService.instance;
+  }
+
+  /**
+   * 同期的にインスタンスを取得（初期化が完了していない可能性あり）
+   */
+  public static getInstanceSync(): AuditLogService {
+    if (!AuditLogService.instance) {
+      AuditLogService.instance = new AuditLogService();
+      // 非同期初期化をバックグラウンドで開始
+      AuditLogService.instance.initialize().catch(err => {
+        console.error('AuditLogService初期化エラー:', err);
+      });
+    }
+    return AuditLogService.instance;
+  }
+
+  /**
+   * サービスを初期化
+   */
+  public async initialize(): Promise<void> {
+    try {
+      // SQLiteServiceが初期化されるのを待つ
+      await this.sqlite.initialize();
+      // データベースを初期化
+      await this.initializeDatabase();
+    } catch (error) {
+      this.logger.logError(error as Error, {
+        context: 'AuditLogService',
+        message: 'サービスの初期化に失敗しました'
+      });
+      throw error;
+    }
   }
 
   private async initializeDatabase(): Promise<void> {
@@ -66,9 +104,36 @@ export class AuditLogService {
         CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id)
       `);
       
-      await this.sqlite.run(`
-        CREATE INDEX IF NOT EXISTS idx_audit_logs_type ON audit_logs(type)
-      `);
+      // typeカラムが存在するか確認してからインデックスを作成
+      try {
+        // まずテーブル情報を取得
+        const tableInfo = await this.sqlite.all(`PRAGMA table_info(audit_logs)`);
+        const hasTypeColumn = tableInfo.some((column: any) => column.name === 'type');
+        
+        if (hasTypeColumn) {
+          await this.sqlite.run(`
+            CREATE INDEX IF NOT EXISTS idx_audit_logs_type ON audit_logs(type)
+          `);
+        } else {
+          // typeカラムが存在しない場合は、カラムを追加
+          this.logger.logInfo({
+            message: 'audit_logsテーブルにtypeカラムが存在しないため、追加します',
+            context: 'AuditLogService'
+          });
+          
+          await this.sqlite.run(`ALTER TABLE audit_logs ADD COLUMN type TEXT DEFAULT 'SYSTEM_CONFIG_CHANGE'`);
+          
+          // カラム追加後にインデックスを作成
+          await this.sqlite.run(`
+            CREATE INDEX IF NOT EXISTS idx_audit_logs_type ON audit_logs(type)
+          `);
+        }
+      } catch (error) {
+        this.logger.logError(error as Error, {
+          context: 'AuditLogService',
+          message: 'typeカラムのインデックス作成に失敗しました'
+        });
+      }
       
       await this.sqlite.run(`
         CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)
@@ -79,6 +144,36 @@ export class AuditLogService {
         message: '監査ログテーブルの初期化に失敗しました'
       });
     }
+  }
+
+  /**
+   * 情報ログを記録する
+   * @param data ログデータ
+   */
+  public logInfo(data: { message: string; details?: any; context?: string }): void {
+    this.logger.logInfo(data);
+  }
+
+  /**
+   * エラーログを記録する
+   * @param error エラーオブジェクト
+   * @param data 追加データ
+   */
+  public logError(error: Error, data: { message: string; details?: any; context?: string }): void {
+    this.logger.logError(error, data);
+  }
+
+  /**
+   * セキュリティログを記録する
+   * @param data セキュリティログデータ
+   */
+  public logSecurity(data: {
+    userId: string;
+    event: string;
+    severity: 'low' | 'medium' | 'high' | 'critical';
+    details: any
+  }): void {
+    this.logger.logSecurity(data);
   }
 
   /**
@@ -182,7 +277,7 @@ export class AuditLogService {
       const results = await this.sqlite.all<any[]>(query, params);
       
       // 結果を適切な形式に変換
-      return results.map(row => ({
+      return results.map((row: any) => ({
         id: row.id,
         timestamp: row.timestamp,
         userId: row.user_id,
@@ -254,7 +349,7 @@ export class AuditLogService {
         [userId, userId, limit]
       );
       
-      return results.map(row => ({
+      return results.map((row: any) => ({
         id: row.id,
         timestamp: row.timestamp,
         userId: row.user_id,
@@ -291,7 +386,7 @@ export class AuditLogService {
         [type, limit]
       );
       
-      return results.map(row => ({
+      return results.map((row: any) => ({
         id: row.id,
         timestamp: row.timestamp,
         userId: row.user_id,

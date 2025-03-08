@@ -1,7 +1,23 @@
 import { WebSocket } from 'ws';
 import { WebSocketHandler } from '../routes/websocket';
 import LoggingService from '../services/loggingService';
-import { verifyJwt } from '../utils/jwt';
+import jwt from 'jsonwebtoken';
+
+// JWT秘密鍵
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+
+// verifyJwt関数の再実装
+const verifyJwt = (token: string): Promise<any> => {
+  return new Promise((resolve, reject) => {
+    jwt.verify(token, JWT_SECRET, (err, decoded) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(decoded as Record<string, any>);
+      }
+    });
+  });
+};
 
 const logger = LoggingService.getInstance();
 
@@ -55,24 +71,42 @@ export class NotificationHandler {
    * 初期化処理
    */
   private initialize(): void {
-    // 接続イベントのハンドリング
-    this.wsHandler.on('connection', (ws: WebSocket, request: any) => {
+    // WebSocketHandlerのinitializeメソッドが呼び出された後に
+    // 接続イベントが発生したときに処理を行うコールバック関数を登録する
+    
+    // WebSocketServerのインスタンスを取得
+    const wss = (this.wsHandler as any).wss;
+    
+    if (!wss) {
+      logger.logError(new Error('WebSocketServer not initialized'), {
+        context: 'NotificationHandler',
+        message: 'Failed to initialize notification handler'
+      });
+      return;
+    }
+    
+    // 接続イベントのリスナーをすべて削除
+    wss.removeAllListeners('connection');
+    
+    // 新しい接続イベントハンドラを追加
+    wss.on('connection', async (ws: WebSocket, request: any) => {
       try {
         // トークンの検証
-        const token = request.url.split('token=')[1]?.split('&')[0];
+        const token = request.url?.split('token=')[1]?.split('&')[0];
         if (!token) {
           ws.close(4001, 'Authentication required');
           return;
         }
         
-        const decoded = verifyJwt(token);
-        if (!decoded || !decoded.id || !decoded.email) {
-          ws.close(4002, 'Invalid token');
-          return;
-        }
-        
-        // クライアント情報を保存
-        this.clients.set(ws, {
+        try {
+          const decoded = await verifyJwt(token);
+          if (!decoded || !decoded.id || !decoded.email) {
+            ws.close(4002, 'Invalid token');
+            return;
+          }
+          
+          // クライアント情報を保存
+          this.clients.set(ws, {
           userId: decoded.id,
           email: decoded.email,
           isAdmin: decoded.isAdmin || false
@@ -113,6 +147,15 @@ export class NotificationHandler {
           });
           this.clients.delete(ws);
         });
+        
+       } catch (tokenError) {
+         logger.logError(tokenError as Error, {
+           context: 'WebSocket',
+           message: 'Token verification error'
+         });
+         ws.close(4002, 'Invalid token');
+         return;
+       }
         
       } catch (error) {
         logger.logError(error as Error, {

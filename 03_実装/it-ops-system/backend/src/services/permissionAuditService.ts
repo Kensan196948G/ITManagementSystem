@@ -235,13 +235,12 @@ export class PermissionAuditService {
       // グローバル管理者に通知
       for (const admin of globalAdmins) {
         await this.notificationService.sendNotification({
-          userId: admin.id,
           userEmail: admin.email,
           title: notificationTitle,
-          body: notificationBody,
+          message: notificationBody,
           type: 'security',
-          priority: 'high',
-          relatedResource: {
+          severity: 'error',
+          data: {
             type: 'permission',
             id: record.targetId
           }
@@ -251,18 +250,17 @@ export class PermissionAuditService {
       // 対象ユーザーにも通知（自分自身が変更した場合を除く）
       if (record.actorEmail !== record.targetEmail) {
         await this.notificationService.sendNotification({
-          userId: record.targetId,
           userEmail: record.targetEmail,
           title: `あなたの権限が${actionText}されました`,
-          body: `
+          message: `
             ${record.actorEmail} によって、あなたの権限が${actionText}されました。
             リソース: ${record.resourceType}/${record.resourceName}
             ${record.reason ? `理由: ${record.reason}` : ''}
             日時: ${record.timestamp.toLocaleString()}
           `,
           type: 'security',
-          priority: 'high',
-          relatedResource: {
+          severity: 'error',
+          data: {
             type: 'permission',
             id: record.targetId
           }
@@ -383,7 +381,7 @@ export class PermissionAuditService {
       const rows = await this.sqlite.all(query, params);
 
       const records = rows.map(row => ({
-        id: row.id,
+        id: typeof row.id === 'string' ? Number(row.id) : row.id,
         timestamp: new Date(row.timestamp),
         actorId: row.actor_id,
         actorEmail: row.actor_email,
@@ -403,8 +401,8 @@ export class PermissionAuditService {
       // 検索パフォーマンスメトリクスの記録
       const duration = performance.now() - startTime;
       await this.metricsService.recordMetric('audit_search_duration_ms', duration, {
-        hasDateFilter: !!(filter.startDate || filter.endDate),
-        hasEmailFilter: !!(filter.actorEmail || filter.targetEmail),
+        hasDateFilter: !!(filter.startDate || filter.endDate) ? 'true' : 'false',
+        hasEmailFilter: !!(filter.actorEmail || filter.targetEmail) ? 'true' : 'false',
         resultCount: records.length.toString()
       });
 
@@ -436,7 +434,7 @@ export class PermissionAuditService {
       }
 
       return {
-        id: row.id,
+        id: typeof row.id === 'string' ? Number(row.id) : row.id,
         timestamp: new Date(row.timestamp),
         actorId: row.actor_id,
         actorEmail: row.actor_email,
@@ -668,10 +666,9 @@ export class PermissionAuditService {
     try {
       // 変更者への通知
       await this.notificationService.sendNotification({
-        userId: record.actorId,
         userEmail: record.actorEmail,
         title: `権限変更レビュー結果: ${review.approved ? '承認' : '却下'}`,
-        body: `
+        message: `
           ${record.targetEmail}への権限変更が${review.approved ? '承認' : '却下'}されました。
           レビュアー: ${review.reviewerEmail}
           コメント: ${review.comments}
@@ -679,8 +676,8 @@ export class PermissionAuditService {
           日時: ${record.timestamp.toLocaleString()}
         `,
         type: 'security',
-        priority: 'high',
-        relatedResource: {
+        severity: 'error',
+        data: {
           type: 'permission',
           id: record.id!.toString()
         }
@@ -689,10 +686,9 @@ export class PermissionAuditService {
       // 対象者への通知（変更者と異なる場合）
       if (record.actorEmail !== record.targetEmail) {
         await this.notificationService.sendNotification({
-          userId: record.targetId,
           userEmail: record.targetEmail,
           title: `権限変更レビュー結果: ${review.approved ? '承認' : '却下'}`,
-          body: `
+          message: `
             あなたへの権限変更が${review.approved ? '承認' : '却下'}されました。
             レビュアー: ${review.reviewerEmail}
             コメント: ${review.comments}
@@ -700,8 +696,8 @@ export class PermissionAuditService {
             日時: ${record.timestamp.toLocaleString()}
           `,
           type: 'security',
-          priority: 'high',
-          relatedResource: {
+          severity: 'error',
+          data: {
             type: 'permission',
             id: record.id!.toString()
           }
@@ -736,7 +732,7 @@ export class PermissionAuditService {
       );
 
       return rows.map(row => ({
-        id: row.id,
+        id: typeof row.id === 'string' ? Number(row.id) : row.id,
         timestamp: new Date(row.timestamp),
         actorId: row.actor_id,
         actorEmail: row.actor_email,

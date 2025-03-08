@@ -16,10 +16,14 @@ declare class LoggingService {
         details?: any;
     }): void;
     logSecurity(data: {
-        userId: string;
-        event: string;
-        severity: 'low' | 'medium' | 'high' | 'critical';
-        details: any;
+        userId?: string;
+        userEmail?: string;
+        event?: string;
+        message?: string;
+        severity?: 'low' | 'medium' | 'high' | 'critical';
+        details?: any;
+        context?: string;
+        [key: string]: any;
     }): void;
     logError(error: Error, context?: any): void;
     logMetric(data: {
@@ -28,7 +32,16 @@ declare class LoggingService {
         unit: string;
         tags?: Record<string, string>;
     }): void;
-    logInfo(message: string, metadata?: any): void;
+    logInfo(messageOrData: string | {
+        message: string;
+        context?: string;
+        [key: string]: any;
+    }, metadata?: any): void;
+    logWarn(messageOrData: string | {
+        message: string;
+        context?: string;
+        [key: string]: any;
+    }, metadata?: any): void;
     queryLogs(_options?: {
         startDate: Date;
         endDate: Date;

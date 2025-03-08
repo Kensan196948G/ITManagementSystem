@@ -31,13 +31,16 @@ if (isDevelopment) {
 }
 
 // データベースの初期化
-try {
-  SQLiteService.getInstance();
-  TokenManager.initialize();
-} catch (error) {
-  console.error('Failed to initialize SQLite database:', error);
-  process.exit(1);
-}
+(async () => {
+  try {
+    await SQLiteService.getInstance();
+    TokenManager.initialize();
+    console.log('Database initialized successfully');
+  } catch (error) {
+    console.error('Failed to initialize SQLite database:', error);
+    process.exit(1);
+  }
+})();
 
 // 基本的なミドルウェアの設定（CORSを最初に）
 app.use(cors({
@@ -119,10 +122,22 @@ server.listen(PORT, () => {
   console.log(`WebSocket server is running at ws://localhost:${PORT}/ws`);
 });
 
+// SQLiteServiceのインスタンスを保持する変数
+let sqliteInstance: SQLiteService;
+
+// 初期化時にインスタンスを取得
+SQLiteService.getInstance().then(instance => {
+  sqliteInstance = instance;
+}).catch(err => {
+  console.error('Failed to get SQLiteService instance:', err);
+});
+
 // グレースフルシャットダウン
 process.on('SIGTERM', () => {
   console.log('SIGTERM signal received: closing HTTP server');
-  SQLiteService.getInstance().close();
+  if (sqliteInstance) {
+    sqliteInstance.close();
+  }
   server.close(() => {
     console.log('HTTP server closed');
     process.exit(0);
@@ -131,7 +146,9 @@ process.on('SIGTERM', () => {
 
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err);
-  SQLiteService.getInstance().close();
+  if (sqliteInstance) {
+    sqliteInstance.close();
+  }
   if (!isDevelopment) {
     process.exit(1);
   }
@@ -140,7 +157,9 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
   if (!isDevelopment) {
-    SQLiteService.getInstance().close();
+    if (sqliteInstance) {
+      sqliteInstance.close();
+    }
     process.exit(1);
   }
 });

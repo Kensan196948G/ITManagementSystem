@@ -3,8 +3,11 @@ import LoggingService from '../services/loggingService';
 
 const logger = LoggingService.getInstance();
 
-export async function up(): Promise<void> {
-  const db = SQLiteService.getInstance();
+export async function up(db?: SQLiteService): Promise<void> {
+  // dbが渡されていない場合は取得する
+  if (!db) {
+    db = await SQLiteService.getInstance();
+  }
   
   try {
     // 権限変更履歴テーブル作成
@@ -77,8 +80,11 @@ export async function up(): Promise<void> {
   }
 }
 
-export async function down(): Promise<void> {
-  const db = SQLiteService.getInstance();
+export async function down(db?: SQLiteService): Promise<void> {
+  // dbが渡されていない場合は取得する
+  if (!db) {
+    db = await SQLiteService.getInstance();
+  }
   
   try {
     await db.run(`DROP TABLE IF EXISTS permission_audit_logs`);

@@ -5,13 +5,14 @@ import { verifyToken } from '../middleware/auth';
 import LoggingService from '../services/loggingService';
 import { MonitoringService } from '../services/monitoringService';
 import { NotificationService } from '../services/notificationService';
+import { AuditLogService } from '../services/auditLogService';
 import { createError, ErrorCode } from '../types/errors';
 
 const router = express.Router();
 const logger = LoggingService.getInstance();
 const securityAudit = SecurityAuditService.getInstance();
 const monitoringService = MonitoringService.getInstance();
-const notificationService = NotificationService.getInstance();
+const notificationService = NotificationService.getInstance(AuditLogService.getInstanceSync());
 
 // メトリクスエンドポイント
 router.get('/metrics', async (req, res) => {
@@ -251,7 +252,14 @@ router.post('/alerts/test', verifyToken, async (req, res, next) => {
       acknowledged: false
     };
 
-    await notificationService.sendAlert(testAlert);
+    await notificationService.sendSecurityAlertNotification({
+      id: testAlert.id,
+      severity: 'medium',
+      type: testAlert.type,
+      message: testAlert.message,
+      source: testAlert.source,
+      details: { timestamp: testAlert.timestamp }
+    });
 
     logger.logAccess({
       userId: req.user?.id || 'anonymous',

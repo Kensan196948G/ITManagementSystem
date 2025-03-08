@@ -1,0 +1,1 @@
+{"version":3,"file":"20230915_create_permission_audit_logs.d.ts","sourceRoot":"","sources":["../../src/migrations/20230915_create_permission_audit_logs.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,aAAa,EAAE,MAAM,2BAA2B,CAAC;AAK1D,wBAAsB,EAAE,CAAC,EAAE,CAAC,EAAE,aAAa,GAAG,OAAO,CAAC,IAAI,CAAC,CA2E1D;AAED,wBAAsB,IAAI,CAAC,EAAE,CAAC,EAAE,aAAa,GAAG,OAAO,CAAC,IAAI,CAAC,CAqB5D"}

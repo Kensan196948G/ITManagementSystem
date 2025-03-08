@@ -7,8 +7,25 @@ import { AuthService } from '../services/authService';
 
 const router = express.Router();
 const logger = LoggingService.getInstance();
-const graphPermissionService = GraphPermissionService.getInstance();
+// サービスインスタンスを非同期で初期化するため、同期版を使用
+const graphPermissionService = GraphPermissionService.getInstanceSync();
 const authService = AuthService.getInstance();
+
+// 非同期初期化を開始（エラーはログに記録）
+(async () => {
+  try {
+    await graphPermissionService.initialize();
+    logger.logInfo({
+      context: 'GraphPermissionsAPI',
+      message: 'GraphPermissionService initialized successfully'
+    });
+  } catch (error) {
+    logger.logError(error as Error, {
+      context: 'GraphPermissionsAPI',
+      message: 'Failed to initialize GraphPermissionService'
+    });
+  }
+})();
 
 /**
  * 利用可能なGraph APIパーミッション一覧を取得

@@ -5,24 +5,70 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SQLiteService = void 0;
 const loggingService_1 = __importDefault(require("./loggingService"));
-const sqlite3_1 = require("sqlite3");
+const sqlite3_1 = __importDefault(require("sqlite3"));
 const path_1 = __importDefault(require("path"));
+const _20230915_create_permission_audit_logs_1 = require("../migrations/20230915_create_permission_audit_logs");
 const logger = loggingService_1.default.getInstance();
+const { Database } = sqlite3_1.default.verbose();
 class SQLiteService {
     constructor() {
         this.db = null;
         this.operationsCount = 0;
-        this.initializeDatabase();
+        // コンストラクタでは非同期処理を直接扱えないため、
+        // 初期化は getInstance() で行う
     }
-    initializeDatabase() {
+    /**
+     * データベースを初期化する
+     * この関数は getInstance() から呼び出される
+     */
+    async initialize() {
+        if (this.db)
+            return; // 既に初期化済みの場合は何もしない
+        await this.initializeDatabase();
+    }
+    /**
+     * マイグレーションを実行する
+     */
+    async runMigrations() {
+        try {
+            // 権限監査ログテーブルの作成
+            await (0, _20230915_create_permission_audit_logs_1.up)(this);
+            logger.logInfo('マイグレーションが正常に実行されました');
+        }
+        catch (error) {
+            logger.logError(error, {
+                context: 'SQLiteService',
+                message: 'マイグレーション実行中にエラーが発生しました'
+            });
+            throw error;
+        }
+    }
+    async initializeDatabase() {
         try {
             const dbPath = path_1.default.join(process.cwd(), 'database.sqlite');
-            this.db = new sqlite3_1.Database(dbPath, (err) => {
-                if (err)
-                    throw err;
+            // データベース接続を Promise でラップして非同期処理を同期的に扱う
+            await new Promise((resolve, reject) => {
+                this.db = new Database(dbPath, (err) => {
+                    if (err) {
+                        logger.logError(err, {
+                            context: 'SQLiteService',
+                            message: 'データベース接続エラー'
+                        });
+                        reject(err);
+                        return;
+                    }
+                    resolve();
+                });
             });
-            // 基本設定
-            this.db.exec('PRAGMA journal_mode = DELETE; PRAGMA synchronous = NORMAL;');
+            // 基本設定（データベース接続が確立された後に実行）
+            await this.exec('PRAGMA journal_mode = DELETE');
+            await this.exec('PRAGMA synchronous = NORMAL');
+            // データベース接続が成功したら、マイグレーションを実行
+            await this.runMigrations();
+            logger.logInfo({
+                context: 'SQLiteService',
+                message: 'データベースが正常に初期化されました'
+            });
         }
         catch (error) {
             logger.logError(error, {
@@ -32,9 +78,27 @@ class SQLiteService {
             throw error;
         }
     }
-    static getInstance() {
+    static async getInstance() {
         if (!SQLiteService.instance) {
             SQLiteService.instance = new SQLiteService();
+            await SQLiteService.instance.initialize();
+        }
+        return SQLiteService.instance;
+    }
+    /**
+     * 同期的にインスタンスを取得する
+     * 注意: このメソッドは初期化が完了していない可能性があります
+     */
+    static getInstanceSync() {
+        if (!SQLiteService.instance) {
+            SQLiteService.instance = new SQLiteService();
+            // 非同期初期化をバックグラウンドで開始
+            SQLiteService.instance.initialize().catch(err => {
+                logger.logError(err, {
+                    context: 'SQLiteService',
+                    message: 'バックグラウンド初期化に失敗しました'
+                });
+            });
         }
         return SQLiteService.instance;
     }
@@ -173,7 +237,7 @@ class SQLiteService {
     async healthCheck() {
         try {
             if (!this.db) {
-                await this.initialize();
+                this.initializeDatabase();
             }
             const result = await this.get('SELECT 1');
             return result !== undefined;

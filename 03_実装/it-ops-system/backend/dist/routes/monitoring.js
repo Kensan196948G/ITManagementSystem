@@ -10,12 +10,13 @@ const auth_1 = require("../middleware/auth");
 const loggingService_1 = __importDefault(require("../services/loggingService"));
 const monitoringService_1 = require("../services/monitoringService");
 const notificationService_1 = require("../services/notificationService");
+const auditLogService_1 = require("../services/auditLogService");
 const errors_1 = require("../types/errors");
 const router = express_1.default.Router();
 const logger = loggingService_1.default.getInstance();
 const securityAudit = securityAuditService_1.SecurityAuditService.getInstance();
 const monitoringService = monitoringService_1.MonitoringService.getInstance();
-const notificationService = notificationService_1.NotificationService.getInstance();
+const notificationService = notificationService_1.NotificationService.getInstance(auditLogService_1.AuditLogService.getInstanceSync());
 // メトリクスエンドポイント
 router.get('/metrics', async (req, res) => {
     try {
@@ -207,7 +208,14 @@ router.post('/alerts/test', auth_1.verifyToken, async (req, res, next) => {
             timestamp: new Date(),
             acknowledged: false
         };
-        await notificationService.sendAlert(testAlert);
+        await notificationService.sendSecurityAlertNotification({
+            id: testAlert.id,
+            severity: 'medium',
+            type: testAlert.type,
+            message: testAlert.message,
+            source: testAlert.source,
+            details: { timestamp: testAlert.timestamp }
+        });
         logger.logAccess({
             userId: req.user?.id || 'anonymous',
             action: 'send_test_alert',

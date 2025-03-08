@@ -92,6 +92,7 @@ class LoggingService {
     logSecurity(data) {
         this.logger.warn('Security Event', {
             type: 'security',
+            severity: data.severity || 'medium',
             ...data,
             timestamp: new Date()
         });
@@ -115,11 +116,35 @@ class LoggingService {
             timestamp: new Date()
         });
     }
-    logInfo(message, metadata) {
-        this.logger.info(message, {
-            ...metadata,
-            timestamp: new Date()
-        });
+    logInfo(messageOrData, metadata) {
+        if (typeof messageOrData === 'string') {
+            this.logger.info(messageOrData, {
+                ...metadata,
+                timestamp: new Date()
+            });
+        }
+        else {
+            const { message, ...rest } = messageOrData;
+            this.logger.info(message, {
+                ...rest,
+                timestamp: new Date()
+            });
+        }
+    }
+    logWarn(messageOrData, metadata) {
+        if (typeof messageOrData === 'string') {
+            this.logger.warn(messageOrData, {
+                ...metadata,
+                timestamp: new Date()
+            });
+        }
+        else {
+            const { message, ...rest } = messageOrData;
+            this.logger.warn(message, {
+                ...rest,
+                timestamp: new Date()
+            });
+        }
     }
     async queryLogs(
     // 将来の実装のための型定義

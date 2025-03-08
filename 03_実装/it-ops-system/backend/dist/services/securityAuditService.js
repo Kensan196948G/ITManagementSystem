@@ -179,6 +179,68 @@ class SecurityAuditService {
             return [];
         }
     }
+    /**
+     * 監査イベントを取得
+     * @param filter フィルター条件
+     */
+    async getAuditEvents(filter) {
+        try {
+            const conditions = [];
+            const params = [];
+            if (filter.userId) {
+                conditions.push('user_id = ?');
+                params.push(filter.userId);
+            }
+            if (filter.action) {
+                conditions.push('action = ?');
+                params.push(filter.action);
+            }
+            if (filter.resource) {
+                conditions.push('resource = ?');
+                params.push(filter.resource);
+            }
+            if (filter.success !== undefined) {
+                conditions.push('success = ?');
+                params.push(filter.success ? 1 : 0);
+            }
+            if (filter.startTime && filter.endTime) {
+                conditions.push('timestamp BETWEEN ? AND ?');
+                params.push(filter.startTime.getTime(), filter.endTime.getTime());
+            }
+            else if (filter.startTime) {
+                conditions.push('timestamp >= ?');
+                params.push(filter.startTime.getTime());
+            }
+            else if (filter.endTime) {
+                conditions.push('timestamp <= ?');
+                params.push(filter.endTime.getTime());
+            }
+            const whereClause = conditions.length > 0
+                ? `WHERE ${conditions.join(' AND ')}`
+                : '';
+            const rows = await this.sqlite.all(`SELECT * FROM audit_logs
+         ${whereClause}
+         ORDER BY timestamp DESC
+         LIMIT 1000`, params);
+            return rows.map(row => ({
+                userId: row.user_id,
+                action: row.action,
+                resource: row.resource,
+                timestamp: row.timestamp,
+                success: row.success === 1,
+                details: row.details ? JSON.parse(row.details) : undefined
+            }));
+        }
+        catch (error) {
+            logger.logError(error, {
+                context: 'SecurityAudit',
+                message: 'Failed to retrieve audit events',
+                filter,
+                details: error instanceof Error ? error.message : 'Unknown error'
+            });
+            return [];
+        }
+    }
     async getRecentAccessAttempts(userId, minutes = 60) {
         try {
             const cutoffTime = Date.now() - minutes * 60 * 1000;
@@ -204,9 +266,126 @@ class SecurityAuditService {
             return [];
         }
     }
+    /**
+     * アクセス試行履歴を取得
+     * @param filter フィルター条件
+     */
+    async getAccessAttempts(filter) {
+        try {
+            const conditions = [];
+            const params = [];
+            if (filter.userId) {
+                conditions.push('user_id = ?');
+                params.push(filter.userId);
+            }
+            if (filter.ipAddress) {
+                conditions.push('ip_address = ?');
+                params.push(filter.ipAddress);
+            }
+            if (filter.resource) {
+                conditions.push('resource = ?');
+                params.push(filter.resource);
+            }
+            if (filter.success !== undefined) {
+                conditions.push('success = ?');
+                params.push(filter.success ? 1 : 0);
+            }
+            if (filter.startTime && filter.endTime) {
+                conditions.push('timestamp BETWEEN ? AND ?');
+                params.push(filter.startTime.getTime(), filter.endTime.getTime());
+            }
+            else if (filter.startTime) {
+                conditions.push('timestamp >= ?');
+                params.push(filter.startTime.getTime());
+            }
+            else if (filter.endTime) {
+                conditions.push('timestamp <= ?');
+                params.push(filter.endTime.getTime());
+            }
+            const whereClause = conditions.length > 0
+                ? `WHERE ${conditions.join(' AND ')}`
+                : '';
+            const rows = await this.sqlite.all(`SELECT * FROM access_attempts
+         ${whereClause}
+         ORDER BY timestamp DESC
+         LIMIT 1000`, params);
+            return rows.map(row => ({
+                userId: row.user_id,
+                resource: row.resource,
+                timestamp: row.timestamp,
+                success: row.success === 1,
+                ipAddress: row.ip_address
+            }));
+        }
+        catch (error) {
+            logger.logError(error, {
+                context: 'SecurityAudit',
+                message: 'Failed to retrieve access attempts',
+                filter,
+                details: error instanceof Error ? error.message : 'Unknown error'
+            });
+            return [];
+        }
+    }
     startPermissionCheck(resource, action) {
         const end = this.permissionCheckDuration.startTimer({ resource, action });
         return end;
+    }
+    /**
+     * セキュリティメトリクスを取得
+     * @param filter フィルター条件
+     */
+    async getSecurityMetrics(filter) {
+        try {
+            const conditions = [];
+            const params = [];
+            if (filter?.startTime && filter?.endTime) {
+                conditions.push('timestamp BETWEEN ? AND ?');
+                params.push(filter.startTime.getTime(), filter.endTime.getTime());
+            }
+            else if (filter?.startTime) {
+                conditions.push('timestamp >= ?');
+                params.push(filter.startTime.getTime());
+            }
+            else if (filter?.endTime) {
+                conditions.push('timestamp <= ?');
+                params.push(filter.endTime.getTime());
+            }
+            const whereClause = conditions.length > 0
+                ? `WHERE ${conditions.join(' AND ')}`
+                : '';
+            // 総イベント数を取得
+            const totalResult = await this.sqlite.get(`SELECT COUNT(*) as count FROM audit_logs ${whereClause}`, params);
+            const totalEvents = totalResult?.count || 0;
+            // 失敗したアクセス試行数を取得
+            const failedResult = await this.sqlite.get(`SELECT COUNT(*) as count FROM access_attempts ${whereClause} AND success = 0`, params);
+            const failedAttempts = failedResult?.count || 0;
+            // 最近の失敗を取得
+            const recentFailures = await this.sqlite.all(`SELECT timestamp, resource FROM access_attempts
+         ${whereClause} AND success = 0
+         ORDER BY timestamp DESC LIMIT 10`, params);
+            // 成功率を計算
+            const successRate = totalEvents > 0 ? (totalEvents - failedAttempts) / totalEvents : 1;
+            return {
+                totalEvents,
+                failedAttempts,
+                successRate,
+                recentFailures
+            };
+        }
+        catch (error) {
+            logger.logError(error, {
+                context: 'SecurityAudit',
+                message: 'Failed to retrieve security metrics',
+                filter,
+                details: error instanceof Error ? error.message : 'Unknown error'
+            });
+            return {
+                totalEvents: 0,
+                failedAttempts: 0,
+                successRate: 0
+            };
+        }
     }
 }
 exports.SecurityAuditService = SecurityAuditService;

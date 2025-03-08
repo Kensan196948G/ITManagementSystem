@@ -7,7 +7,7 @@ import path from 'path';
 import fs from 'fs';
 import LoggingService from './loggingService';
 import { SQLiteService } from './sqliteService';
-import { AuditLogService } from './auditLogService';
+import { AuditLogService, AuditLogType } from './auditLogService';
 
 const execAsync = promisify(exec);
 const logger = LoggingService.getInstance();
@@ -46,7 +46,7 @@ export interface PermissionAuditLog {
  */
 export class GraphPermissionService {
   private static instance: GraphPermissionService;
-  private graphClient: Client;
+  private graphClient!: Client; // 初期化子を追加
   private sqliteService: SQLiteService;
   private auditLogService: AuditLogService;
   private readonly SCRIPTS_PATH: string;
@@ -54,8 +54,9 @@ export class GraphPermissionService {
 
   private constructor() {
     this.initializeGraphClient();
-    this.sqliteService = SQLiteService.getInstance();
-    this.auditLogService = AuditLogService.getInstance();
+    this.sqliteService = SQLiteService.getInstanceSync();
+    // AuditLogServiceは非同期で初期化するため、getInstanceSyncを使用
+    this.auditLogService = AuditLogService.getInstanceSync();
     
     // スクリプトパスの設定
     this.SCRIPTS_PATH = path.resolve(process.cwd(), '..', 'scripts');
@@ -72,11 +73,44 @@ export class GraphPermissionService {
   /**
    * シングルトンインスタンスを取得
    */
-  public static getInstance(): GraphPermissionService {
+  public static async getInstance(): Promise<GraphPermissionService> {
     if (!GraphPermissionService.instance) {
       GraphPermissionService.instance = new GraphPermissionService();
+      // 非同期初期化
+      await GraphPermissionService.instance.initialize();
     }
     return GraphPermissionService.instance;
+  }
+
+  /**
+   * 同期的にインスタンスを取得（初期化が完了していない可能性あり）
+   */
+  public static getInstanceSync(): GraphPermissionService {
+    if (!GraphPermissionService.instance) {
+      GraphPermissionService.instance = new GraphPermissionService();
+      // 非同期初期化をバックグラウンドで開始
+      GraphPermissionService.instance.initialize().catch(err => {
+        console.error('GraphPermissionService初期化エラー:', err);
+      });
+    }
+    return GraphPermissionService.instance;
+  }
+
+  /**
+   * サービスを初期化
+   */
+  public async initialize(): Promise<void> {
+    try {
+      // SQLiteServiceとAuditLogServiceが初期化されるのを待つ
+      await this.sqliteService.initialize();
+      await this.auditLogService.initialize();
+    } catch (error) {
+      logger.logError(error as Error, {
+        context: 'GraphPermissionService',
+        message: 'サービスの初期化に失敗しました'
+      });
+      throw error;
+    }
   }
 
   /**
@@ -236,17 +270,18 @@ export class GraphPermissionService {
       );
       
       // 全体の監査ログにも記録
-      await this.auditLogService.logPermissionChange({
-        actorId: logEntry.operatorEmail,
-        actorEmail: logEntry.operatorEmail,
-        targetId: logEntry.userEmail,
-        targetEmail: logEntry.userEmail,
-        action: logEntry.action === 'grant' ? 'add' : (logEntry.action === 'revoke' ? 'remove' : 'view'),
-        resourceType: 'graph_api_permission',
-        resourceName: logEntry.permission || 'all_permissions',
-        permissionBefore: logEntry.action === 'revoke' ? 'granted' : 'not_granted',
-        permissionAfter: logEntry.action === 'grant' ? 'granted' : 'not_granted',
-        reason: `Graph API ${logEntry.action} operation for ${logEntry.userEmail}`
+      await this.auditLogService.log({
+        userId: logEntry.operatorEmail,
+        action: logEntry.action === 'grant' ? 'GRANT' : (logEntry.action === 'revoke' ? 'REVOKE' : 'LIST'),
+        type: AuditLogType.API_PERMISSION_CHANGE,
+        targetUserId: logEntry.userEmail,
+        details: {
+          permission: logEntry.permission || 'all_permissions',
+          permissionType: logEntry.permissionType,
+          success: logEntry.success,
+          errorMessage: logEntry.errorMessage,
+          reason: `Graph API ${logEntry.action} operation for ${logEntry.userEmail}`
+        }
       });
       
       logger.logInfo({
@@ -496,7 +531,7 @@ export class GraphPermissionService {
       const logs = await this.sqliteService.all(query, params);
       
       return logs.map(log => ({
-        id: log.id,
+        id: typeof log.id === 'string' ? parseInt(log.id, 10) : log.id, // 文字列の場合は数値に変換
         timestamp: log.timestamp,
         userEmail: log.user_email,
         operatorEmail: log.operator_email,

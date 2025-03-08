@@ -11,7 +11,8 @@ import rateLimit from 'express-rate-limit';
 import { PermissionService } from '../services/permissionService';
 import { AuthService } from '../services/authService';
 import LoggingService from '../services/loggingService';
-import { requireAuthLevel, requireGlobalAdmin, AuthorizationLevel } from '../middleware/authorization';
+import { requireAuthLevel, requireGlobalAdmin } from '../middleware/authorization';
+import { AuthorizationLevel } from '../types/authorization';
 
 // 環境変数の読み込み
 config();

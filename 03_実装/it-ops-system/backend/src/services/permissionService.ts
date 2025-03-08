@@ -2,7 +2,7 @@ import { UserRole } from '../types/system';
 import { SQLiteService } from './sqliteService';
 import LoggingService from './loggingService';
 import { AuthService } from './authService';
-import { AuthorizationLevel } from '../middleware/authorization';
+import { AuthorizationLevel } from '../types/authorization';
 
 const logger = LoggingService.getInstance();
 

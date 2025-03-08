@@ -4,204 +4,384 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.NotificationService = void 0;
-const microsoft_graph_client_1 = require("@microsoft/microsoft-graph-client");
-const identity_1 = require("@azure/identity");
-const azureTokenCredentials_1 = require("@microsoft/microsoft-graph-client/authProviders/azureTokenCredentials");
-const loggingService_1 = __importDefault(require("./loggingService"));
-const logger = loggingService_1.default.getInstance();
-const isDevelopment = process.env.NODE_ENV === 'development' || process.env.AUTH_MODE === 'mock';
+const ws_1 = __importDefault(require("ws"));
+const url_1 = __importDefault(require("url"));
+const auditLogService_1 = require("./auditLogService");
+const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+const config_1 = require("../config");
+/**
+ * 通知サービス
+ * WebSocketを使用したリアルタイム通知機能を提供
+ */
 class NotificationService {
-    constructor() {
-        this.RETRY_ATTEMPTS = 3;
-        this.isMockMode = isDevelopment;
-        if (!this.isMockMode) {
-            this.initializeGraphClient().catch(error => {
-                logger.logError(error, {
-                    context: 'GraphClientInit',
-                    message: 'Failed to initialize Graph Client during construction'
-                });
-            });
-        }
-        else {
-            logger.logInfo({
-                context: 'GraphClientInit',
-                message: '開発モードでGraph Clientをモックに設定しました'
-            });
-        }
+    constructor(auditLogService) {
+        this.clients = new Map();
+        this.initialized = false;
+        this.auditLogService = auditLogService;
+        this.wss = new ws_1.default.Server({ noServer: true });
+        this.initialize();
     }
-    async initializeGraphClient() {
-        if (this.isMockMode) {
-            // 開発モードではGraphClientの初期化をスキップ
-            return;
-        }
-        try {
-            const tenantId = process.env.AZURE_TENANT_ID;
-            const clientId = process.env.AZURE_CLIENT_ID;
-            const clientSecret = process.env.AZURE_CLIENT_SECRET;
-            if (!tenantId || !clientId || !clientSecret) {
-                throw new Error('Azure credentials are not fully set in environment variables.');
-            }
-            this.credential = new identity_1.ClientSecretCredential(tenantId, clientId, clientSecret, {
-                retryOptions: {
-                    maxRetries: this.RETRY_ATTEMPTS,
-                    retryDelayInMs: 3000
-                }
-            });
-            const authProvider = new azureTokenCredentials_1.TokenCredentialAuthenticationProvider(this.credential, {
-                scopes: ['https://graph.microsoft.com/.default']
-            });
-            this.graphClient = microsoft_graph_client_1.Client.initWithMiddleware({
-                authProvider,
-                defaultVersion: 'v1.0'
-            });
-            await this.validateAuth();
-        }
-        catch (error) {
-            logger.logError(error, {
-                context: 'GraphClientAuth',
-                message: 'Graph Client initialization error',
-                details: error.message
-            });
-            throw new Error(`Microsoft Graph authentication initialization failed: ${error.message}`);
-        }
-    }
-    async validateAuth() {
-        if (this.isMockMode) {
-            // 開発モードでは認証検証をスキップ
-            return;
-        }
-        try {
-            const senderAccount = process.env.MS_SENDER_ACCOUNT || 'notification@mirai-const.co.jp';
-            await this.graphClient.api(`/users/${senderAccount}`).select('mail').get();
-        }
-        catch (error) {
-            logger.logError(error, {
-                context: 'GraphClientAuth',
-                message: 'Authentication validation failed',
-                details: error.message
-            });
-            throw new Error('Failed to validate email sending permissions.');
-        }
-    }
-    static getInstance() {
+    /**
+     * シングルトンインスタンスを取得
+     */
+    static getInstance(auditLogService) {
         if (!NotificationService.instance) {
-            NotificationService.instance = new NotificationService();
+            // auditLogServiceが指定されていない場合は、getInstanceSyncを使用
+            const logService = auditLogService || auditLogService_1.AuditLogService.getInstanceSync();
+            NotificationService.instance = new NotificationService(logService);
         }
         return NotificationService.instance;
     }
-    async sendAlertEmail(alert) {
-        if (this.isMockMode) {
-            logger.logInfo({
-                context: 'MockEmailNotification',
-                alertId: alert.id,
-                alertType: alert.type,
-                message: '開発モードでメール送信をシミュレーション',
-                mockEmail: {
-                    subject: `[${alert.type.toUpperCase()}] System Alert: ${alert.source}`,
-                    body: this.generateAlertEmailTemplate(alert)
-                }
-            });
+    /**
+     * 初期化処理
+     */
+    async initialize() {
+        if (this.initialized)
             return;
+        // WebSocketサーバーの接続イベントを設定
+        this.wss.on('connection', (ws, request) => {
+            this.handleConnection(ws, request);
+        });
+        this.initialized = true;
+        this.auditLogService.log({
+            userId: 'system',
+            action: 'INITIALIZE',
+            type: auditLogService_1.AuditLogType.SYSTEM_CONFIG_CHANGE,
+            details: {
+                event: 'NotificationService initialized',
+                timestamp: new Date().toISOString()
+            }
+        });
+    }
+    /**
+     * WebSocket接続ハンドラ
+     * @param ws WebSocketインスタンス
+     * @param request リクエスト情報
+     */
+    handleConnection(ws, request) {
+        const { userEmail } = request;
+        // クライアントマップにユーザーを追加
+        if (!this.clients.has(userEmail)) {
+            this.clients.set(userEmail, new Set());
         }
-        let retryCount = 0;
-        const recipients = process.env.ALERT_EMAIL_RECIPIENTS?.split(',') || [];
-        if (recipients.length === 0) {
-            logger.logError(new Error('No email recipients configured'), {
-                context: 'EmailNotification',
-                alertId: alert.id,
-                alertType: alert.type
-            });
-            return;
-        }
-        const senderAccount = process.env.MS_SENDER_ACCOUNT || 'notification@mirai-const.co.jp';
-        while (retryCount < this.RETRY_ATTEMPTS) {
+        this.clients.get(userEmail)?.add(ws);
+        // 接続確立メッセージを送信
+        ws.send(JSON.stringify({
+            type: 'connection_established',
+            message: 'Connected to notification service',
+            timestamp: new Date().toISOString()
+        }));
+        // メッセージイベントリスナー
+        ws.on('message', (message) => {
             try {
-                await this.validateAuth();
-                const message = {
-                    message: {
-                        subject: `[${alert.type.toUpperCase()}] System Alert: ${alert.source}`,
-                        body: {
-                            contentType: 'HTML',
-                            content: this.generateAlertEmailTemplate(alert)
-                        },
-                        toRecipients: recipients.map(email => ({
-                            emailAddress: { address: email }
-                        })),
-                        from: {
-                            emailAddress: { address: process.env.SMTP_FROM || senderAccount }
-                        }
-                    },
-                    saveToSentItems: true
-                };
-                await this.graphClient.api(`/users/${senderAccount}/sendMail`).post(message);
-                logger.logInfo({
-                    context: 'EmailNotification',
-                    alertId: alert.id,
-                    recipients: recipients.length,
-                    alertType: alert.type,
-                    senderAccount,
-                    retryCount,
-                    message: 'Alert email sent successfully'
+                const data = JSON.parse(message.toString());
+                // クライアントからのメッセージ処理（必要に応じて実装）
+                this.auditLogService.log({
+                    userId: userEmail,
+                    action: 'RECEIVE',
+                    type: auditLogService_1.AuditLogType.SYSTEM_CONFIG_CHANGE,
+                    details: {
+                        event: 'WebSocket message received',
+                        type: data.type
+                    }
                 });
-                return;
             }
             catch (error) {
-                logger.logError(error, {
-                    context: 'AlertEmailNotification',
-                    alertId: alert.id,
-                    retryCount,
-                    message: 'Email sending failed',
-                    details: error.message
+                this.auditLogService.log({
+                    userId: userEmail,
+                    action: 'ERROR',
+                    type: auditLogService_1.AuditLogType.SYSTEM_CONFIG_CHANGE,
+                    details: {
+                        event: 'WebSocket message parse error',
+                        error: error.message,
+                        message
+                    }
                 });
-                if (retryCount < this.RETRY_ATTEMPTS - 1) {
-                    retryCount++;
-                    await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds before retry
+            }
+        });
+        // 切断イベントリスナー
+        ws.on('close', () => {
+            this.removeClient(ws, userEmail);
+            this.auditLogService.log({
+                userId: userEmail,
+                action: 'DISCONNECT',
+                type: auditLogService_1.AuditLogType.SYSTEM_CONFIG_CHANGE,
+                details: {
+                    event: 'WebSocket connection closed',
+                    timestamp: new Date().toISOString()
                 }
-                else {
-                    throw new Error(`Failed to send alert email after ${this.RETRY_ATTEMPTS} attempts: ${error.message}`);
-                }
+            });
+        });
+        this.auditLogService.log({
+            userId: userEmail,
+            action: 'CONNECT',
+            type: auditLogService_1.AuditLogType.SYSTEM_CONFIG_CHANGE,
+            details: {
+                event: 'WebSocket connection established',
+                timestamp: new Date().toISOString()
+            }
+        });
+    }
+    /**
+     * クライアントを削除
+     * @param ws WebSocketインスタンス
+     * @param userEmail ユーザーメールアドレス
+     */
+    removeClient(ws, userEmail) {
+        const userClients = this.clients.get(userEmail);
+        if (userClients) {
+            userClients.delete(ws);
+            if (userClients.size === 0) {
+                this.clients.delete(userEmail);
             }
         }
     }
-    generateAlertEmailTemplate(alert) {
-        return `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: ${this.getAlertColor(alert.type)}; border-bottom: 2px solid ${this.getAlertColor(alert.type)}; padding-bottom: 10px;">
-          ${this.getAlertTypeInJapanese(alert.type)} Alert
-        </h2>
-        <div style="margin: 20px 0;">
-          <p><strong>Source:</strong> ${alert.source}</p>
-          <p><strong>Message:</strong> ${alert.message}</p>
-          <p><strong>Timestamp:</strong> ${alert.timestamp.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</p>
-        </div>
-        ${alert.metadata ? `
-          <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin-top: 20px;">
-            <h3>Details:</h3>
-            <pre style="white-space: pre-wrap;">${JSON.stringify(alert.metadata, null, 2)}</pre>
-          </div>
-        ` : ''}
-      </div>
-    `;
+    /**
+     * HTTP接続をWebSocketにアップグレード
+     * @param request HTTPリクエスト
+     * @param socket ソケット
+     * @param head ヘッダー
+     */
+    async handleUpgrade(request, socket, head) {
+        try {
+            // URLからトークンを取得
+            const { query } = url_1.default.parse(request.url || '', true);
+            const token = query.token;
+            if (!token) {
+                socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+                socket.destroy();
+                return;
+            }
+            // トークンを検証
+            const payload = await this.verifyJwt(token);
+            const userEmail = payload.email;
+            if (!userEmail) {
+                socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+                socket.destroy();
+                return;
+            }
+            // WebSocketにアップグレード
+            this.wss.handleUpgrade(request, socket, head, (ws) => {
+                this.wss.emit('connection', ws, { userEmail });
+            });
+        }
+        catch (error) {
+            this.auditLogService.log({
+                userId: 'unknown',
+                action: 'ERROR',
+                type: auditLogService_1.AuditLogType.SYSTEM_CONFIG_CHANGE,
+                details: {
+                    event: 'WebSocket upgrade failed',
+                    error: error.message,
+                    url: request.url
+                }
+            });
+            socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+            socket.destroy();
+        }
     }
-    getAlertColor(type) {
-        const colors = {
-            critical: '#FF0000',
-            error: '#FF4444',
-            warning: '#FFBB33',
-            info: '#33B5E5',
-            default: '#333333'
-        };
-        return colors[type.toLowerCase()] || colors.default;
+    /**
+     * JWT検証
+     * @param token JWTトークン
+     */
+    async verifyJwt(token) {
+        return new Promise((resolve, reject) => {
+            jsonwebtoken_1.default.verify(token, config_1.config.jwt.secret, (err, decoded) => {
+                if (err) {
+                    reject(err);
+                }
+                else {
+                    resolve(decoded);
+                }
+            });
+        });
     }
-    getAlertTypeInJapanese(type) {
-        const types = {
-            critical: '緊急',
-            error: 'エラー',
-            warning: '警告',
-            info: '情報'
-        };
-        return types[type.toLowerCase()] || type;
+    /**
+     * 通知を送信
+     * @param notification 通知内容
+     */
+    sendNotification(notification) {
+        const { userEmail, ...notificationData } = notification;
+        const timestamp = new Date().toISOString();
+        const message = JSON.stringify({
+            ...notificationData,
+            timestamp
+        });
+        try {
+            if (userEmail) {
+                // 特定のユーザーに送信
+                const userClients = this.clients.get(userEmail);
+                if (userClients) {
+                    this.sendToClients(userClients, message);
+                }
+            }
+            else {
+                // 全ユーザーに送信
+                for (const clients of this.clients.values()) {
+                    this.sendToClients(clients, message);
+                }
+            }
+            // 監査ログに記録
+            this.auditLogService.log({
+                userId: userEmail || 'system',
+                action: 'NOTIFY',
+                type: auditLogService_1.AuditLogType.SYSTEM_CONFIG_CHANGE,
+                details: {
+                    event: 'Notification sent',
+                    severity: notification.severity === 'critical' ? 'critical' :
+                        notification.severity === 'error' ? 'high' :
+                            notification.severity === 'warning' ? 'medium' : 'low',
+                    type: notification.type,
+                    title: notification.title,
+                    timestamp
+                }
+            });
+        }
+        catch (error) {
+            this.auditLogService.log({
+                userId: userEmail || 'system',
+                action: 'ERROR',
+                type: auditLogService_1.AuditLogType.SYSTEM_CONFIG_CHANGE,
+                details: {
+                    event: 'Failed to send notification',
+                    error: error.message,
+                    type: notification.type,
+                    title: notification.title
+                }
+            });
+        }
+    }
+    /**
+     * クライアントセットにメッセージを送信
+     * @param clients WebSocketのセット
+     * @param message 送信メッセージ
+     */
+    sendToClients(clients, message) {
+        for (const client of clients) {
+            if (client.readyState === ws_1.default.OPEN) {
+                client.send(message);
+            }
+        }
+    }
+    /**
+     * パーミッション変更通知を送信
+     * @param params パラメータ
+     */
+    sendPermissionChangeNotification(params) {
+        const { userEmail, permission, action, operatorEmail } = params;
+        const actionText = action === 'grant' ? '付与' : '削除';
+        this.sendNotification({
+            userEmail,
+            type: 'permission_change',
+            severity: 'info',
+            title: 'パーミッション変更通知',
+            message: `あなたのGraph APIパーミッション "${permission}" が${actionText}されました`,
+            data: {
+                permission,
+                action,
+                operatorEmail
+            }
+        });
+    }
+    /**
+     * システムステータス変更通知を送信
+     * @param params パラメータ
+     */
+    sendSystemStatusNotification(params) {
+        const { status, previousStatus, affectedComponents, message } = params;
+        // ステータスに応じた重要度を設定
+        let severity = 'info';
+        if (status === 'critical') {
+            severity = 'error';
+        }
+        else if (status === 'degraded') {
+            severity = 'warning';
+        }
+        // ステータスの日本語表記
+        const statusText = status === 'healthy' ? '正常' :
+            status === 'degraded' ? '劣化' : '危機的';
+        this.sendNotification({
+            type: 'system_status',
+            severity,
+            title: `システムステータス: ${statusText}`,
+            message,
+            data: {
+                status,
+                previousStatus,
+                affectedComponents
+            }
+        });
+    }
+    /**
+     * セキュリティアラート通知を送信
+     * @param alert アラート情報
+     */
+    sendSecurityAlertNotification(alert) {
+        // アラートの重要度に応じた通知の重要度を設定
+        let severity = 'info';
+        if (alert.severity === 'critical' || alert.severity === 'high') {
+            severity = 'error';
+        }
+        else if (alert.severity === 'medium') {
+            severity = 'warning';
+        }
+        // アラートタイプの日本語表記
+        let typeText = alert.type;
+        if (alert.type === 'unauthorized_access') {
+            typeText = '不正アクセス';
+        }
+        else if (alert.type === 'suspicious_activity') {
+            typeText = '不審な活動';
+        }
+        else if (alert.type === 'data_breach') {
+            typeText = 'データ漏洩';
+        }
+        this.sendNotification({
+            type: 'security_alert',
+            severity,
+            title: `セキュリティアラート: ${typeText}`,
+            message: alert.message,
+            data: {
+                id: alert.id,
+                severity: alert.severity,
+                type: alert.type,
+                source: alert.source,
+                details: alert.details
+            }
+        });
+    }
+    /**
+     * リソース警告通知を送信
+     * @param params パラメータ
+     */
+    sendResourceWarningNotification(params) {
+        const { resource, usagePercentage, threshold, details } = params;
+        // 使用率に応じた重要度を設定
+        let severity = 'warning';
+        if (usagePercentage > 95) {
+            severity = 'error';
+        }
+        else if (usagePercentage <= threshold) {
+            severity = 'info';
+        }
+        // リソースの日本語表記
+        const resourceText = resource === 'cpu' ? 'CPU' :
+            resource === 'memory' ? 'メモリ' :
+                resource === 'disk' ? 'ディスク' : 'ネットワーク';
+        this.sendNotification({
+            type: 'resource_warning',
+            severity,
+            title: `リソース警告: ${resourceText}使用率`,
+            message: `${resourceText}使用率が${usagePercentage.toFixed(1)}%に達しました（閾値: ${threshold}%）`,
+            data: {
+                resource,
+                usagePercentage,
+                threshold,
+                details
+            }
+        });
     }
 }
 exports.NotificationService = NotificationService;
+exports.default = NotificationService;
 //# sourceMappingURL=notificationService.js.map

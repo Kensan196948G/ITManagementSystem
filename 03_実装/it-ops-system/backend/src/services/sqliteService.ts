@@ -1,28 +1,79 @@
 import LoggingService from './loggingService';
-import { Database } from 'sqlite3';
+import sqlite3 from 'sqlite3';
 import path from 'path';
 import { DatabaseRecord, QueryParams, RunResult } from '../types/database';
+import { up as createPermissionAuditLogs } from '../migrations/20230915_create_permission_audit_logs';
 
 const logger = LoggingService.getInstance();
+const { Database } = sqlite3.verbose();
 
 export class SQLiteService {
   private static instance: SQLiteService;
-  private db: Database | null = null;
+  private db: sqlite3.Database | null = null;
   private operationsCount: number = 0;
 
   private constructor() {
-    this.initializeDatabase();
+    // コンストラクタでは非同期処理を直接扱えないため、
+    // 初期化は getInstance() で行う
   }
 
-  private initializeDatabase(): void {
+  /**
+   * データベースを初期化する
+   * この関数は getInstance() から呼び出される
+   */
+  public async initialize(): Promise<void> {
+    if (this.db) return; // 既に初期化済みの場合は何もしない
+    await this.initializeDatabase();
+  }
+
+  /**
+   * マイグレーションを実行する
+   */
+  private async runMigrations(): Promise<void> {
+    try {
+      // 権限監査ログテーブルの作成
+      await createPermissionAuditLogs(this);
+      
+      logger.logInfo('マイグレーションが正常に実行されました');
+    } catch (error) {
+      logger.logError(error as Error, {
+        context: 'SQLiteService',
+        message: 'マイグレーション実行中にエラーが発生しました'
+      });
+      throw error;
+    }
+  }
+
+  private async initializeDatabase(): Promise<void> {
     try {
       const dbPath = path.join(process.cwd(), 'database.sqlite');
-      this.db = new Database(dbPath, (err) => {
-        if (err) throw err;
+      
+      // データベース接続を Promise でラップして非同期処理を同期的に扱う
+      await new Promise<void>((resolve, reject) => {
+        this.db = new Database(dbPath, (err: Error | null) => {
+          if (err) {
+            logger.logError(err, {
+              context: 'SQLiteService',
+              message: 'データベース接続エラー'
+            });
+            reject(err);
+            return;
+          }
+          resolve();
+        });
       });
-
-      // 基本設定
-      this.db.exec('PRAGMA journal_mode = DELETE; PRAGMA synchronous = NORMAL;');
+      
+      // 基本設定（データベース接続が確立された後に実行）
+      await this.exec('PRAGMA journal_mode = DELETE');
+      await this.exec('PRAGMA synchronous = NORMAL');
+      
+      // データベース接続が成功したら、マイグレーションを実行
+      await this.runMigrations();
+      
+      logger.logInfo({
+        context: 'SQLiteService',
+        message: 'データベースが正常に初期化されました'
+      });
     } catch (error) {
       logger.logError(error as Error, {
         context: 'SQLiteService',
@@ -32,14 +83,33 @@ export class SQLiteService {
     }
   }
 
-  public static getInstance(): SQLiteService {
+  public static async getInstance(): Promise<SQLiteService> {
     if (!SQLiteService.instance) {
       SQLiteService.instance = new SQLiteService();
+      await SQLiteService.instance.initialize();
     }
     return SQLiteService.instance;
   }
 
-  public getDb(): Database {
+  /**
+   * 同期的にインスタンスを取得する
+   * 注意: このメソッドは初期化が完了していない可能性があります
+   */
+  public static getInstanceSync(): SQLiteService {
+    if (!SQLiteService.instance) {
+      SQLiteService.instance = new SQLiteService();
+      // 非同期初期化をバックグラウンドで開始
+      SQLiteService.instance.initialize().catch(err => {
+        logger.logError(err, {
+          context: 'SQLiteService',
+          message: 'バックグラウンド初期化に失敗しました'
+        });
+      });
+    }
+    return SQLiteService.instance;
+  }
+
+  public getDb(): sqlite3.Database {
     if (!this.db) {
       throw new Error('Database is not initialized');
     }
@@ -188,7 +258,7 @@ export class SQLiteService {
   public async healthCheck(): Promise<boolean> {
     try {
       if (!this.db) {
-        await this.initialize();
+        this.initializeDatabase();
       }
       const result = await this.get('SELECT 1');
       return result !== undefined;

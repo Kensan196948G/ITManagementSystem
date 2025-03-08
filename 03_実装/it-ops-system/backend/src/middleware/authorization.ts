@@ -3,26 +3,25 @@ import { PermissionService } from '../services/permissionService';
 import { AuthService } from '../services/authService';
 import { createError, ErrorCode } from '../types/errors';
 import LoggingService from '../services/loggingService';
+import { AuthorizationLevel } from '../types/authorization';
 
 const logger = LoggingService.getInstance();
-const permissionService = PermissionService.getInstance();
-const authService = AuthService.getInstance();
+// 循環参照を避けるために、遅延初期化を使用
+let permissionService: PermissionService;
+let authService: AuthService;
 
-/**
- * 権限レベルの列挙型 - フロントエンドの AuthorizationLevel と一致させる
- */
-export enum AuthorizationLevel {
-  // グローバル管理者のみがアクセス可能
-  GLOBAL_ADMIN_ONLY = 'GLOBAL_ADMIN_ONLY',
-  
-  // 特定の管理者ロールを持つユーザーがアクセス可能
-  ADMIN_ROLE = 'ADMIN_ROLE',
-  
-  // 一般ユーザー（適切なロールを持つ）がアクセス可能
-  USER_ROLE = 'USER_ROLE',
-  
-  // すべての認証済みユーザーがアクセス可能
-  AUTHENTICATED = 'AUTHENTICATED',
+function getPermissionService(): PermissionService {
+  if (!permissionService) {
+    permissionService = PermissionService.getInstance();
+  }
+  return permissionService;
+}
+
+function getAuthService(): AuthService {
+  if (!authService) {
+    authService = AuthService.getInstance();
+  }
+  return authService;
 }
 
 /**
@@ -40,7 +39,7 @@ export const requireAuthLevel = (level: AuthorizationLevel) => {
         ));
       }
 
-      const userInfo = await permissionService.getUserInfo(req.user.id);
+      const userInfo = await getPermissionService().getUserInfo(req.user.id);
       if (!userInfo) {
         return next(createError(
           ErrorCode.AD_USER_NOT_FOUND,
@@ -50,7 +49,7 @@ export const requireAuthLevel = (level: AuthorizationLevel) => {
       }
 
       // ユーザーロールを取得
-      const roles = await authService.getUserRoles(userInfo.email);
+      const roles = await getAuthService().getUserRoles(userInfo.email);
 
       let authorized = false;
       switch (level) {
@@ -136,7 +135,7 @@ export const requirePermission = (resource: string, action: string) => {
         ));
       }
 
-      const userInfo = await permissionService.getUserInfo(req.user.id);
+      const userInfo = await getPermissionService().getUserInfo(req.user.id);
       if (!userInfo) {
         return next(createError(
           ErrorCode.AD_USER_NOT_FOUND,
@@ -146,7 +145,7 @@ export const requirePermission = (resource: string, action: string) => {
       }
 
       // 権限チェック
-      const hasPermission = await permissionService.checkPermission(
+      const hasPermission = await getPermissionService().checkPermission(
         userInfo.email,
         resource,
         action
@@ -208,7 +207,7 @@ export const requireGlobalAdmin = async (req: Request, res: Response, next: Next
       ));
     }
 
-    const userInfo = await permissionService.getUserInfo(req.user.id);
+    const userInfo = await getPermissionService().getUserInfo(req.user.id);
     if (!userInfo) {
       return next(createError(
         ErrorCode.AD_USER_NOT_FOUND,
@@ -218,7 +217,7 @@ export const requireGlobalAdmin = async (req: Request, res: Response, next: Next
     }
 
     // グローバル管理者かどうかを確認
-    const roles = await authService.getUserRoles(userInfo.email);
+    const roles = await getAuthService().getUserRoles(userInfo.email);
     
     if (!roles.isGlobalAdmin) {
       logger.logSecurity({
@@ -272,7 +271,7 @@ export const attachMicrosoftPermissions = async (req: Request, res: Response, ne
       ));
     }
 
-    const userInfo = await permissionService.getUserInfo(req.user.id);
+    const userInfo = await getPermissionService().getUserInfo(req.user.id);
     if (!userInfo) {
       return next(createError(
         ErrorCode.AD_USER_NOT_FOUND,
@@ -282,7 +281,7 @@ export const attachMicrosoftPermissions = async (req: Request, res: Response, ne
     }
 
     // Microsoft Graph API 権限情報を取得
-    const msPermissions = await authService.getMicrosoftPermissions(userInfo.email);
+    const msPermissions = await getAuthService().getMicrosoftPermissions(userInfo.email);
     
     // リクエストオブジェクトに権限情報を追加
     (req as any).msPermissions = msPermissions;

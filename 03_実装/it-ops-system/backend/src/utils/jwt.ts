@@ -1,4 +1,8 @@
-import jwt from 'jsonwebtoken';
+import jwt, { SignOptions, VerifyErrors, JwtPayload } from 'jsonwebtoken';
+import crypto from 'crypto';
+
+// configモジュールをインポート
+// @ts-ignore - configモジュールの型定義が見つからない場合の対処
 import { config } from '../config';
 
 /**
@@ -8,20 +12,32 @@ import { config } from '../config';
  */
 export const generateJwt = (
   payload: Record<string, any>,
-  expiresIn: string = '1d'
+  expiresIn: string | number = '1d'
 ): string => {
-  return jwt.sign(payload, config.jwt.secret, {
-    expiresIn
-  });
+  // SignOptionsを定義
+  const signOptions: SignOptions = {
+    algorithm: 'HS256',
+    issuer: 'it-ops-system',
+    audience: 'localhost',
+    subject: payload.email || payload.userId || 'user',
+    jwtid: crypto.randomUUID?.() || Date.now().toString()
+  };
+
+  // expiresInが文字列または数値の場合は設定
+  if (expiresIn) {
+    signOptions.expiresIn = expiresIn as any;
+  }
+
+  return jwt.sign(payload, config.jwt.secret, signOptions);
 };
 
 /**
  * JWTトークンを検証
  * @param token 検証するトークン
  */
-export const verifyJwt = (token: string): Promise<any> => {
+export const verifyJwt = (token: string): Promise<JwtPayload | Record<string, any>> => {
   return new Promise((resolve, reject) => {
-    jwt.verify(token, config.jwt.secret, (err, decoded) => {
+    jwt.verify(token, config.jwt.secret, (err: VerifyErrors | null, decoded: JwtPayload | string | undefined) => {
       if (err) {
         reject(err);
       } else {

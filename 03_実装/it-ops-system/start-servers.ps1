@@ -56,14 +56,17 @@ if (Test-Path $backendPath) {
     Write-Host "Backend server starting with PID: $($backendProcess.Id)" -ForegroundColor Green
     
     # バックエンドの起動を待機
-    $maxRetries = 30
+    $maxRetries = 60  # 最大リトライ回数を増やす
     $retryCount = 0
     $backendStarted = $false
     
     Write-Host "Waiting for backend to start..." -ForegroundColor Yellow
+    # 最初に少し長めに待機してデータベース初期化を待つ
+    Start-Sleep -Seconds 5
+    
     while ($retryCount -lt $maxRetries -and -not $backendStarted) {
         try {
-            $response = Invoke-WebRequest -Uri "http://localhost:3002/api/health" -Method GET
+            $response = Invoke-WebRequest -Uri "http://localhost:3002/api/health" -Method GET -TimeoutSec 5
             if ($response.StatusCode -eq 200) {
                 $backendStarted = $true
                 Write-Host "Backend server is ready!" -ForegroundColor Green
@@ -71,7 +74,7 @@ if (Test-Path $backendPath) {
         } catch {
             $retryCount++
             Write-Host "Waiting for backend server... (Attempt $retryCount of $maxRetries)" -ForegroundColor Yellow
-            Start-Sleep -Seconds 1
+            Start-Sleep -Seconds 2  # 待機時間を増やす
         }
     }
     

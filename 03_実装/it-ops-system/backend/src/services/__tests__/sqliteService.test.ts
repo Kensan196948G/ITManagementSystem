@@ -38,19 +38,20 @@ describe('SQLiteService', () => {
     });
   });
 
-  describe('initialize', () => {
+  describe('healthCheck', () => {
     it('データベース接続を初期化できること', async () => {
-      await expect(sqliteService.initialize()).resolves.not.toThrow();
+      await expect(sqliteService.healthCheck()).resolves.not.toThrow();
       expect(sqlite3.Database).toHaveBeenCalled();
     });
 
     it('データベース接続エラーを処理できること', async () => {
-      (sqlite3.Database as jest.Mock).mockImplementationOnce((_, __, callback) => {
+      mockDb.get.mockImplementationOnce((_, callback) => {
         callback?.(new Error('Connection failed'));
         return mockDb;
       });
 
-      await expect(sqliteService.initialize()).rejects.toThrow('Connection failed');
+      const isHealthy = await sqliteService.healthCheck();
+      expect(isHealthy).toBe(false);
     });
   });
 
@@ -58,6 +59,7 @@ describe('SQLiteService', () => {
     it('SQLクエリを実行できること', async () => {
       mockDb.run.mockImplementation((_, __, callback) => {
         callback?.(null, { lastID: 1 });
+        return mockDb;
       });
 
       const result = await sqliteService.run('INSERT INTO test VALUES (?)', ['value']);
@@ -68,6 +70,7 @@ describe('SQLiteService', () => {
     it('クエリエラーを処理できること', async () => {
       mockDb.run.mockImplementation((_, __, callback) => {
         callback?.(new Error('Query failed'));
+        return mockDb;
       });
 
       await expect(sqliteService.run('INVALID SQL')).rejects.toThrow('Query failed');
@@ -79,6 +82,7 @@ describe('SQLiteService', () => {
       const mockRows = [{ id: 1 }, { id: 2 }];
       mockDb.all.mockImplementation((_, __, callback) => {
         callback?.(null, mockRows);
+        return mockDb;
       });
 
       const results = await sqliteService.all('SELECT * FROM test');
@@ -89,6 +93,7 @@ describe('SQLiteService', () => {
     it('クエリエラーを処理できること', async () => {
       mockDb.all.mockImplementation((_, __, callback) => {
         callback?.(new Error('Query failed'));
+        return mockDb;
       });
 
       await expect(sqliteService.all('INVALID SQL')).rejects.toThrow('Query failed');
@@ -100,6 +105,7 @@ describe('SQLiteService', () => {
       const mockRow = { id: 1 };
       mockDb.get.mockImplementation((_, __, callback) => {
         callback?.(null, mockRow);
+        return mockDb;
       });
 
       const result = await sqliteService.get('SELECT * FROM test WHERE id = ?', [1]);
@@ -110,6 +116,7 @@ describe('SQLiteService', () => {
     it('結果が見つからない場合にnullを返すこと', async () => {
       mockDb.get.mockImplementation((_, __, callback) => {
         callback?.(null, undefined);
+        return mockDb;
       });
 
       const result = await sqliteService.get('SELECT * FROM test WHERE id = ?', [999]);
@@ -119,6 +126,7 @@ describe('SQLiteService', () => {
     it('クエリエラーを処理できること', async () => {
       mockDb.get.mockImplementation((_, __, callback) => {
         callback?.(new Error('Query failed'));
+        return mockDb;
       });
 
       await expect(sqliteService.get('INVALID SQL')).rejects.toThrow('Query failed');
@@ -129,6 +137,7 @@ describe('SQLiteService', () => {
     it('複数のSQLステートメントを実行できること', async () => {
       mockDb.exec.mockImplementation((_, callback) => {
         callback?.(null);
+        return mockDb;
       });
 
       await expect(sqliteService.exec('CREATE TABLE test; INSERT INTO test VALUES (1);'))
@@ -139,6 +148,7 @@ describe('SQLiteService', () => {
     it('実行エラーを処理できること', async () => {
       mockDb.exec.mockImplementation((_, callback) => {
         callback?.(new Error('Execution failed'));
+        return mockDb;
       });
 
       await expect(sqliteService.exec('INVALID SQL')).rejects.toThrow('Execution failed');
@@ -149,6 +159,7 @@ describe('SQLiteService', () => {
     it('正常な状態を確認できること', async () => {
       mockDb.get.mockImplementation((_, callback) => {
         callback?.(null, { result: 1 });
+        return mockDb;
       });
 
       const isHealthy = await sqliteService.healthCheck();
@@ -159,6 +170,7 @@ describe('SQLiteService', () => {
     it('異常な状態を検出できること', async () => {
       mockDb.get.mockImplementation((_, callback) => {
         callback?.(new Error('Health check failed'));
+        return mockDb;
       });
 
       const isHealthy = await sqliteService.healthCheck();

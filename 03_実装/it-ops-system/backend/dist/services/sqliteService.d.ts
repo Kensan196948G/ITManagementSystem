@@ -1,13 +1,27 @@
-import { Database } from 'sqlite3';
+import sqlite3 from 'sqlite3';
 import { DatabaseRecord, QueryParams, RunResult } from '../types/database';
 export declare class SQLiteService {
     private static instance;
     private db;
     private operationsCount;
     private constructor();
+    /**
+     * データベースを初期化する
+     * この関数は getInstance() から呼び出される
+     */
+    initialize(): Promise<void>;
+    /**
+     * マイグレーションを実行する
+     */
+    private runMigrations;
     private initializeDatabase;
-    static getInstance(): SQLiteService;
-    getDb(): Database;
+    static getInstance(): Promise<SQLiteService>;
+    /**
+     * 同期的にインスタンスを取得する
+     * 注意: このメソッドは初期化が完了していない可能性があります
+     */
+    static getInstanceSync(): SQLiteService;
+    getDb(): sqlite3.Database;
     getOperationsCount(): Promise<number>;
     getPragmaValue(pragmaName: string): Promise<any>;
     getMemoryUsage(): Promise<number>;

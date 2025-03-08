@@ -19,6 +19,7 @@ const ad_1 = __importDefault(require("./routes/ad"));
 const m365_1 = __importDefault(require("./routes/m365"));
 const admin_1 = __importDefault(require("./routes/admin"));
 const metrics_1 = __importDefault(require("./routes/metrics"));
+const graphPermissions_1 = __importDefault(require("./routes/graphPermissions"));
 const sqliteService_1 = require("./services/sqliteService");
 const tokenManager_1 = require("./services/tokenManager");
 const app_1 = __importDefault(require("./app"));
@@ -31,14 +32,17 @@ if (isDevelopment) {
     console.log('Some features may be disabled if services are not available');
 }
 // データベースの初期化
-try {
-    sqliteService_1.SQLiteService.getInstance();
-    tokenManager_1.TokenManager.initialize();
-}
-catch (error) {
-    console.error('Failed to initialize SQLite database:', error);
-    process.exit(1);
-}
+(async () => {
+    try {
+        await sqliteService_1.SQLiteService.getInstance();
+        tokenManager_1.TokenManager.initialize();
+        console.log('Database initialized successfully');
+    }
+    catch (error) {
+        console.error('Failed to initialize SQLite database:', error);
+        process.exit(1);
+    }
+})();
 // 基本的なミドルウェアの設定（CORSを最初に）
 app_1.default.use((0, cors_1.default)({
     origin: isDevelopment ? 'http://localhost:3000' : process.env.CORS_ORIGIN,
@@ -76,8 +80,13 @@ apiRouter.use('/ad', ad_1.default);
 apiRouter.use('/m365', m365_1.default);
 apiRouter.use('/admin', admin_1.default);
 apiRouter.use('/metrics', metrics_1.default);
+apiRouter.use('/graph-permissions', graphPermissions_1.default);
 // APIルーターをマウント
 app_1.default.use('/api', apiRouter);
+// 直接マウントしたルートも追加（フロントエンドの/apiプレフィックスを維持する場合）
+app_1.default.use('/auth', auth_1.default);
+// 開発用ログインエンドポイント用のルートも追加
+app_1.default.use('/auth/dev', auth_1.default);
 // エラーハンドリングミドルウェア（必ず他のミドルウェアの後に配置）
 app_1.default.use(errorHandling_1.errorLogger);
 app_1.default.use(errorHandling_1.errorHandler);
@@ -102,10 +111,20 @@ server.listen(PORT, () => {
     console.log(`API documentation available at http://localhost:${PORT}/api/health`);
     console.log(`WebSocket server is running at ws://localhost:${PORT}/ws`);
 });
+// SQLiteServiceのインスタンスを保持する変数
+let sqliteInstance;
+// 初期化時にインスタンスを取得
+sqliteService_1.SQLiteService.getInstance().then(instance => {
+    sqliteInstance = instance;
+}).catch(err => {
+    console.error('Failed to get SQLiteService instance:', err);
+});
 // グレースフルシャットダウン
 process.on('SIGTERM', () => {
     console.log('SIGTERM signal received: closing HTTP server');
-    sqliteService_1.SQLiteService.getInstance().close();
+    if (sqliteInstance) {
+        sqliteInstance.close();
+    }
     server.close(() => {
         console.log('HTTP server closed');
         process.exit(0);
@@ -113,7 +132,9 @@ process.on('SIGTERM', () => {
 });
 process.on('uncaughtException', (err) => {
     console.error('Uncaught Exception:', err);
-    sqliteService_1.SQLiteService.getInstance().close();
+    if (sqliteInstance) {
+        sqliteInstance.close();
+    }
     if (!isDevelopment) {
         process.exit(1);
     }
@@ -121,7 +142,9 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
     if (!isDevelopment) {
-        sqliteService_1.SQLiteService.getInstance().close();
+        if (sqliteInstance) {
+            sqliteInstance.close();
+        }
         process.exit(1);
     }
 });

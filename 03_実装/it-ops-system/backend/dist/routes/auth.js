@@ -15,6 +15,8 @@ const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 const permissionService_1 = require("../services/permissionService");
 const authService_1 = require("../services/authService");
 const loggingService_1 = __importDefault(require("../services/loggingService"));
+const authorization_1 = require("../middleware/authorization");
+const authorization_2 = require("../types/authorization");
 // 環境変数の読み込み
 (0, dotenv_1.config)();
 const router = express_1.default.Router();
@@ -132,11 +134,11 @@ router.post('/login', loginLimiter, async (req, res, next) => {
 // モック認証用エンドポイント（開発環境のみ）
 router.post('/dev/login', devLoginLimiter, async (req, res, next) => {
     try {
-        // 開発環境でない場合は404を返す
-        if (process.env.NODE_ENV !== 'development' || process.env.AUTH_MODE !== 'mock') {
+        // 開発環境およびDEV_LOGIN_ENABLEDが有効でない場合は404を返す
+        if (process.env.NODE_ENV !== 'development' && process.env.AUTH_MODE !== 'mock' && process.env.DEV_LOGIN_ENABLED !== 'true') {
             return res.status(404).json({
                 status: 'error',
-                message: 'This endpoint is only available in development mode'
+                message: 'Development login endpoint is not available or disabled'
             });
         }
         const { username, password } = req.body;
@@ -268,10 +270,13 @@ router.post('/force-logout', exports.verifyToken, async (req, res) => {
         });
     }
 });
+/**
+ * 権限チェックAPI - 特定のリソースに対するアクセス権をチェック
+ */
 router.post('/check-permission', async (req, res) => {
     try {
         const { userEmail, check } = req.body;
-        const hasPermission = await permissionService.checkPermission(userEmail, check);
+        const hasPermission = await permissionService.checkPermission(userEmail, check.resource, check.action);
         res.json({ hasPermission });
     }
     catch (error) {
@@ -279,9 +284,15 @@ router.post('/check-permission', async (req, res) => {
             context: 'PermissionAPI',
             message: '権限チェックエラー'
         });
-        res.status(500).json({ error: '権限チェック中にエラーが発生しました' });
+        res.status(500).json({
+            status: 'error',
+            message: '権限チェック中にエラーが発生しました'
+        });
     }
 });
+/**
+ * ユーザーロール情報取得API - ユーザーのロールと権限情報を返す
+ */
 router.get('/user-roles/:email', async (req, res) => {
     try {
         const { email } = req.params;
@@ -293,9 +304,15 @@ router.get('/user-roles/:email', async (req, res) => {
             context: 'PermissionAPI',
             message: 'ユーザーロール取得エラー'
         });
-        res.status(500).json({ error: 'ユーザーロールの取得中にエラーが発生しました' });
+        res.status(500).json({
+            status: 'error',
+            message: 'ユーザーロールの取得中にエラーが発生しました'
+        });
     }
 });
+/**
+ * アクセス検証API - 特定の権限に対するアクセス権をチェック
+ */
 router.post('/validate-access', async (req, res) => {
     try {
         const { userEmail, permission } = req.body;
@@ -307,8 +324,98 @@ router.post('/validate-access', async (req, res) => {
             context: 'PermissionAPI',
             message: 'アクセス検証エラー'
         });
-        res.status(500).json({ error: 'アクセス検証中にエラーが発生しました' });
+        res.status(500).json({
+            status: 'error',
+            message: 'アクセス検証中にエラーが発生しました'
+        });
     }
+});
+/**
+ * グローバル管理者チェックAPI - ユーザーがグローバル管理者かどうかを確認
+ * フロントエンドの authApi.isGlobalAdmin() 関数に対応
+ */
+router.get('/check-global-admin/:email', async (req, res) => {
+    try {
+        const { email } = req.params;
+        const isGlobalAdmin = await authService.isGlobalAdmin(email);
+        res.json({
+            isGlobalAdmin,
+            status: 'success'
+        });
+    }
+    catch (error) {
+        logger.logError(error, {
+            context: 'AuthAPI',
+            message: 'グローバル管理者チェックエラー',
+            email: req.params.email
+        });
+        res.status(500).json({
+            status: 'error',
+            message: 'グローバル管理者チェック中にエラーが発生しました',
+            isGlobalAdmin: false
+        });
+    }
+});
+/**
+ * Microsoft権限チェックAPI - ユーザーのMicrosoft Graph API権限を確認
+ * フロントエンドの authApi.checkMicrosoftPermissions() 関数に対応
+ */
+router.get('/ms-permissions/:email', exports.verifyToken, async (req, res) => {
+    try {
+        const { email } = req.params;
+        // 権限チェック - 自分自身のアカウントの場合はOK、それ以外はグローバル管理者が必要
+        const userInfo = await permissionService.getUserInfo(req.user?.id || '');
+        if (userInfo?.email !== email) {
+            const isAdmin = await authService.isGlobalAdmin(userInfo?.email || '');
+            if (!isAdmin) {
+                return res.status(403).json({
+                    status: 'error',
+                    message: '他のユーザーの権限情報を確認するにはグローバル管理者権限が必要です'
+                });
+            }
+        }
+        // Microsoft権限情報を取得
+        const msPermissions = await authService.getMicrosoftPermissions(email);
+        res.json({
+            status: msPermissions.status,
+            permissions: msPermissions.permissions,
+            missingPermissions: msPermissions.missingPermissions,
+            accountStatus: msPermissions.accountStatus,
+            roles: msPermissions.roles
+        });
+    }
+    catch (error) {
+        logger.logError(error, {
+            context: 'AuthAPI',
+            message: 'Microsoft権限チェックエラー',
+            email: req.params.email
+        });
+        res.status(500).json({
+            status: 'error',
+            message: 'Microsoft権限確認中にエラーが発生しました'
+        });
+    }
+});
+/**
+ * 権限レベルによるアクセス制御をテストするエンドポイント
+ * グローバル管理者のみがアクセス可能
+ */
+router.get('/admin-only', exports.verifyToken, (0, authorization_1.requireAuthLevel)(authorization_2.AuthorizationLevel.GLOBAL_ADMIN_ONLY), (req, res) => {
+    res.json({
+        status: 'success',
+        message: 'グローバル管理者専用のAPIにアクセスしました',
+        isAdmin: true
+    });
+});
+/**
+ * 権限レベルによるアクセス制御をテストするエンドポイント
+ * 管理者権限を持つユーザーがアクセス可能
+ */
+router.get('/admin-role', exports.verifyToken, (0, authorization_1.requireAuthLevel)(authorization_2.AuthorizationLevel.ADMIN_ROLE), (req, res) => {
+    res.json({
+        status: 'success',
+        message: '管理者権限を持つユーザー専用のAPIにアクセスしました'
+    });
 });
 // エラーハンドリングの適用
 const errorHandling_1 = require("../middleware/errorHandling");
